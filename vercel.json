@@ -1,0 +1,1 @@
+{ "crons": [{ "path": "/api/fluxy/cleanup", "schedule": "17 3 * * *" }] }

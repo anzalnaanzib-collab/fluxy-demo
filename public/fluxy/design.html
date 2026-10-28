@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fluxy bridge parts</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="bridge-ui.css">
+<style>
+  body{margin:0;background:var(--fxb-bg);color:var(--fxb-text);font-family:var(--fxb-font)}
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;padding:24px}
+  .frame{position:relative;height:440px;border:1px dashed var(--fxb-border);border-radius:18px;overflow:hidden;transform:translateZ(0)}
+  .frame h2{position:absolute;top:8px;left:12px;margin:0;font-size:12px;color:var(--fxb-text-muted);z-index:2147483100}
+  .frame .fxb-gate,.frame .fxb-note,.frame .fxb-toast{position:absolute}
+</style>
+</head>
+<body>
+<div class="row">
+  <div class="frame"><h2>Passcode gate · default</h2>
+    <div class="fxb-gate" role="dialog" aria-modal="true" aria-labelledby="t1">
+      <form class="fxb-card"><img class="fxb-logo" src="fluxy-logo.png" alt="Fluxy">
+        <h1 class="fxb-title" id="t1">Meet Fluxy</h1>
+        <p class="fxb-body">Enter your demo code to meet Fluxy.</p>
+        <div class="fxb-field"><label class="fxb-label" for="c1">Demo code</label>
+          <input class="fxb-input" id="c1" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <button class="fxb-btn" type="submit">Continue</button>
+        <p class="fxb-error" role="alert"></p>
+      </form></div></div>
+
+  <div class="frame"><h2>Passcode gate · wrong code</h2>
+    <div class="fxb-gate" role="dialog" aria-modal="true" aria-labelledby="t2">
+      <form class="fxb-card"><img class="fxb-logo" src="fluxy-logo.png" alt="Fluxy">
+        <h1 class="fxb-title" id="t2">Meet Fluxy</h1>
+        <p class="fxb-body">Enter your demo code to meet Fluxy.</p>
+        <div class="fxb-field"><label class="fxb-label" for="c2">Demo code</label>
+          <input class="fxb-input" id="c2" value="FLUX-1234" autocomplete="off"></div>
+        <button class="fxb-btn" type="submit">Continue</button>
+        <p class="fxb-error" role="alert">That code didn't work. Check it and try again.</p>
+      </form></div></div>
+
+  <div class="frame"><h2>Toast · daily limit &nbsp;·&nbsp; Demo note</h2>
+    <div class="fxb-toast warn" role="status" aria-live="polite">That's today's demo limit. Fluxy will be back tomorrow.
+      <button class="fxb-x" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+    <div class="fxb-note" role="note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+      Demo version: please don't share private information.
+      <button class="fxb-x" aria-label="Dismiss note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,31 @@
+/* Fluxy bridge tokens. Every value reads Fluxus's own variable first, so the
+   bridge's few UI pieces follow whichever Fluxus skin is active; the hex after
+   the comma is the fallback (checked by contrast.py). All classes are prefixed
+   fxb- so they can never collide with Fluxus's own styles. */
+:root {
+  --fxb-bg:           var(--canvas, #161414);
+  --fxb-surface:      var(--card, #262221);
+  --fxb-surface-2:    rgb(var(--c-carbon, 46 42 41));
+  --fxb-border:       var(--line, #46403e);
+  --fxb-border-input: rgb(var(--c-faint, 140 133 128));
+  --fxb-text:         var(--ink, #f4efea);
+  --fxb-text-muted:   var(--muted, #bab2ac);
+  --fxb-accent:       var(--acid, #66ffa3);
+  --fxb-on-accent:    rgb(var(--on-a1, 21 21 26));
+  --fxb-warning:      rgb(var(--warn-ink, 255 212 122));
+  --fxb-danger:       #ff8a7a;
+
+  --fxb-font-display: "Bricolage Grotesque", system-ui, sans-serif;
+  --fxb-font:         "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --fxb-mono:         "JetBrains Mono", ui-monospace, monospace;
+
+  --fxb-radius-sm: 10px;
+  --fxb-radius-md: 14px;
+  --fxb-radius-lg: var(--radius, 18px);
+  --fxb-radius-pill: 999px;
+
+  --fxb-shadow-pop: 0 18px 48px rgb(0 0 0 / .45);
+  --fxb-fast: 120ms;
+  --fxb-base: 200ms;
+  --fxb-ease: cubic-bezier(.2, .8, .2, 1);
+}

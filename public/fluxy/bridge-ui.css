@@ -1,0 +1,40 @@
+/* Fluxy bridge UI: passcode gate, demo note, toast. Uses tokens.css. */
+.fxb-gate{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;padding:16px;
+  background:radial-gradient(1200px 600px at 50% -10%,rgb(102 255 163 / .10),transparent 60%),var(--fxb-bg);
+  color:var(--fxb-text);font-family:var(--fxb-font)}
+.fxb-card{width:min(360px,100%);background:var(--fxb-surface);border:1px solid var(--fxb-border);
+  border-radius:var(--fxb-radius-lg);padding:28px 24px 24px;box-shadow:var(--fxb-shadow-pop);text-align:center}
+.fxb-logo{width:72px;height:72px;border-radius:50%;display:block;margin:0 auto 14px;object-fit:cover}
+.fxb-title{font-family:var(--fxb-font-display);font-size:28px;line-height:34px;font-weight:700;margin:0 0 6px}
+.fxb-body{color:var(--fxb-text-muted);font-size:14px;line-height:20px;margin:0 0 18px}
+.fxb-field{text-align:left;margin:0 0 14px}
+.fxb-label{display:block;font-size:13px;font-weight:600;margin:0 0 6px}
+.fxb-input{box-sizing:border-box;width:100%;height:44px;padding:0 14px;border-radius:var(--fxb-radius-md);
+  border:1px solid var(--fxb-border-input);background:var(--fxb-surface-2);color:var(--fxb-text);
+  font:500 16px var(--fxb-font);letter-spacing:.04em}
+.fxb-input:focus-visible,.fxb-btn:focus-visible,.fxb-x:focus-visible{outline:2px solid var(--fxb-accent);outline-offset:2px}
+.fxb-btn{width:100%;height:44px;border:0;border-radius:var(--fxb-radius-pill);background:var(--fxb-accent);
+  color:var(--fxb-on-accent);font:700 14px var(--fxb-font);cursor:pointer;transition:filter var(--fxb-fast) var(--fxb-ease)}
+.fxb-btn:hover{filter:brightness(1.06)}
+.fxb-btn[disabled]{opacity:.7;cursor:progress}
+.fxb-error{min-height:20px;margin:10px 0 0;color:var(--fxb-danger);font-size:13px;line-height:18px}
+
+.fxb-note{position:fixed;left:12px;bottom:12px;z-index:2147482000;display:flex;align-items:center;gap:6px;
+  max-width:calc(100vw - 24px);padding:6px 6px 6px 12px;border-radius:var(--fxb-radius-pill);
+  background:var(--fxb-surface-2);border:1px solid var(--fxb-border);color:var(--fxb-text-muted);
+  font:500 12px/16px var(--fxb-font);opacity:0;animation:fxb-in var(--fxb-base) var(--fxb-ease) 1s forwards}
+.fxb-note svg{flex:none}
+.fxb-x{display:grid;place-items:center;width:32px;height:32px;min-width:32px;border:0;border-radius:50%;
+  background:transparent;color:inherit;cursor:pointer;position:relative}
+.fxb-x::after{content:"";position:absolute;inset:-6px}  /* 44px touch target */
+.fxb-x:hover{background:rgb(255 255 255 / .06)}
+
+.fxb-toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147482500;
+  display:flex;align-items:center;gap:10px;width:max-content;max-width:min(520px,calc(100% - 24px));box-sizing:border-box;
+  padding:10px 8px 10px 14px;border-radius:var(--fxb-radius-md);background:var(--fxb-surface);
+  border:1px solid var(--fxb-border);border-left:4px solid var(--fxb-accent);color:var(--fxb-text);
+  font:500 14px/20px var(--fxb-font);box-shadow:var(--fxb-shadow-pop)}
+.fxb-toast.warn{border-left-color:var(--fxb-warning)}
+
+@keyframes fxb-in{to{opacity:1}}
+@media (prefers-reduced-motion:reduce){.fxb-note{animation:none;opacity:1}}
