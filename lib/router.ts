@@ -130,7 +130,12 @@ export async function* route(req: SampleReq, opts: { label: string; country: str
   const store = opts.store || getStore();
   let cooling: Map<ProviderId, number>;
   try { cooling = await store.coolingDown(); } catch { cooling = new Map(); }
-  const list = candidates(req, cooling, opts.country);
+  let list = candidates(req, cooling, opts.country);
+  // No tool-capable AI left? Answer as plain text instead of falling back to the demo.
+  if (req.tools && req.tools.length) {
+    const plain = candidates({ ...req, tools: undefined }, cooling, opts.country).filter((p) => !list.includes(p));
+    list = [...list, ...plain];
+  }
   if (!list.length) { yield { t: "error", code: "rate_limited" }; return; }
 
   let sawBadRequest = false;
@@ -141,7 +146,7 @@ export async function* route(req: SampleReq, opts: { label: string; country: str
     const onAbort = () => ctl.abort();
     opts.signal.addEventListener("abort", onAbort);
     try {
-      const gen = callOne(p, req, ctl.signal);
+      const gen = callOne(p, req.tools && req.tools.length && !p.can.tools ? { ...req, tools: undefined } : req, ctl.signal);
       let r = await gen.next();
       while (!r.done) { sent = true; yield r.value; r = await gen.next(); }
       await store.record({ requestId: req.requestId, label: opts.label, provider: p.id, model: p.models[req.tier], tier: req.tier, status: "ok", inputTokens: r.value.in, outputTokens: r.value.out }).catch(() => {});

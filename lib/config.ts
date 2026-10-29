@@ -25,7 +25,7 @@ export const PROVIDERS: Provider[] = [
     keyEnv: "GEMINI_API_KEY",
     models: {
       quick: env("GEMINI_MODEL_QUICK", "gemini-flash-lite-latest"),
-      default: env("GEMINI_MODEL_DEFAULT", "gemini-flash-latest"),
+      default: env("GEMINI_MODEL_DEFAULT", "gemini-flash-lite-latest"),
     },
     can: { tools: true, images: true, json: true },
     maxImages: 4,

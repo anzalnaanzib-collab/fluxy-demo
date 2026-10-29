@@ -127,7 +127,7 @@ async def main():
         s = seen()
         check("F06-H3", "second AI crashing -> third AI answers", r.get("text", "").startswith("Hello from openrouter"), (r, s))
         r = await page.evaluate(SAMPLE, ["Add a post", {"toolsDemo": True}])
-        check("F06-E1", "tool request with no tool-capable AI left -> 'busy' (Fluxus demo answer)", r.get("error") == "rate_limited", r)
+        check("F06-E1", "tool request with no tool-capable AI left -> plain answer, no demo", r.get("text", "").startswith("Hello from openrouter"), r)
         fake({"openrouter": "429"})
         r = await page.evaluate(SAMPLE, ["Again", {}])
         check("F06-E2", "all free AIs out -> 'busy' code Fluxus already handles", r.get("error") == "rate_limited", r)
