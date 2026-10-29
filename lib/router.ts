@@ -83,8 +83,11 @@ async function* callOne(p: Provider, req: SampleReq, signal: AbortSignal): Async
     throw new Fail("down", null, `network: ${(e as Error).message}`);
   }
   if (res.status === 429) throw new Fail("quota", res, "rate limited");
-  if (res.status === 400 || res.status === 413 || res.status === 422) throw new Fail("bad", res, `rejected ${res.status}`);
-  if (!res.ok || !res.body) throw new Fail("down", res, `status ${res.status}`);
+  if (!res.ok || !res.body) {
+    const why = (await res.text().catch(() => "")).slice(0, 300);
+    if (res.status === 400 || res.status === 413 || res.status === 422) throw new Fail("bad", res, `rejected ${res.status}: ${why}`);
+    throw new Fail("down", res, `status ${res.status}: ${why}`);
+  }
 
   const calls = new Map<number, { id: string; name: string; args: string }>();
   let usage: { in?: number; out?: number } = {};

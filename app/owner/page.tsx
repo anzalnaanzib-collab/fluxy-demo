@@ -14,6 +14,14 @@ const cell: React.CSSProperties = { textAlign: "left", padding: "8px 10px", bord
 export default function Owner() {
   const [h, setH] = useState<Health | null>(null);
   const [st, setSt] = useState<"loading" | "ok" | "denied" | "error">("loading");
+  const [probe, setProbe] = useState<{ id: string; model?: string; ok: boolean; status: number; ms?: number; detail: string }[] | null>(null);
+  const [probing, setProbing] = useState(false);
+  const runProbe = async () => {
+    setProbing(true); setProbe(null);
+    try { const r = await fetch("/api/fluxy/probe", { method: "POST" }); const j = await r.json(); setProbe(j.results || []); }
+    catch { setProbe([{ id: "all", ok: false, status: 0, detail: "Couldn't run the test" }]); }
+    setProbing(false);
+  };
   const load = async () => {
     setSt("loading");
     try {
@@ -43,6 +51,17 @@ export default function Owner() {
             <td style={cell}>{Object.values(p.models).join(", ")}</td>
           </tr>))}</tbody>
       </table>
+      <h2>Test each AI</h2>
+      <p style={{ color: "#bab2ac", fontSize: 13 }}>Sends a 3-word test question to each AI and shows exactly what it replied.</p>
+      <button onClick={runProbe} disabled={probing} style={{ padding: "8px 14px", borderRadius: 999, border: 0, background: "#66ffa3", color: "#15151a", fontWeight: 700 }}>{probing ? "Testing…" : "Test each AI"}</button>
+      {probe && (
+        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+          <thead><tr><th scope="col" style={cell}>AI</th><th scope="col" style={cell}>Result</th><th scope="col" style={cell}>Reply or error</th></tr></thead>
+          <tbody>{probe.map((r) => (
+            <tr key={r.id}><td style={cell}>{r.id}<br /><small style={{ color: "#bab2ac" }}>{r.model}</small></td>
+              <td style={cell}>{r.ok ? "✅ working" : `❌ failed${r.status ? ` (${r.status})` : ""}`}</td>
+              <td style={{ ...cell, fontFamily: "monospace", fontSize: 12, wordBreak: "break-word" }}>{r.detail}</td></tr>))}</tbody>
+        </table>)}
       <h2>Demo codes</h2>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead><tr><th scope="col" style={cell}>Label</th><th scope="col" style={cell}>Answers today</th><th scope="col" style={cell}>Daily cap</th></tr></thead>
