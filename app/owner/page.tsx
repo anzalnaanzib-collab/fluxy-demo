@@ -14,6 +14,7 @@ const cell: React.CSSProperties = { textAlign: "left", padding: "8px 10px", bord
 export default function Owner() {
   const [h, setH] = useState<Health | null>(null);
   const [st, setSt] = useState<"loading" | "ok" | "denied" | "error">("loading");
+  const [why, setWhy] = useState("");
   const [probe, setProbe] = useState<{ id: string; model?: string; ok: boolean; status: number; ms?: number; detail: string }[] | null>(null);
   const [probing, setProbing] = useState(false);
   const runProbe = async () => {
@@ -27,15 +28,15 @@ export default function Owner() {
     try {
       const r = await fetch("/api/fluxy/health", { cache: "no-store" });
       if (r.status === 401 || r.status === 403) return setSt("denied");
-      if (!r.ok) return setSt("error");
+      if (!r.ok) { setWhy(`Server error ${r.status}: ${(await r.text()).slice(0, 200)}`); return setSt("error"); }
       setH(await r.json()); setSt("ok");
-    } catch { setSt("error"); }
+    } catch (e) { setWhy(String(e)); setSt("error"); }
   };
   useEffect(() => { load(); }, []);
 
   if (st === "loading") return <main style={box}><p>Loading…</p></main>;
   if (st === "denied") return <main style={box}><h1>Owner page</h1><p>Open <a style={{ color: "#66ffa3" }} href="/">Fluxy</a> and enter the <b>owner code</b> first, then come back here.</p></main>;
-  if (st === "error" || !h) return <main style={box}><p>Couldn't load the status.</p><button onClick={load}>Try again</button></main>;
+  if (st === "error" || !h) return <main style={box}><p>Couldn't load the status.</p><p style={{ fontFamily: "monospace", fontSize: 12 }}>{why}</p><p>Check your settings here: <a style={{ color: "#66ffa3" }} href="/api/fluxy/setup-check">settings check</a></p><button onClick={load}>Try again</button></main>;
   const okToday = h.today.filter((t) => t.status === "ok").reduce((n, t) => n + t.n, 0);
   return (
     <main style={box}>
