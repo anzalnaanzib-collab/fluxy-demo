@@ -14,7 +14,7 @@ http.createServer((req, res) => {
     if (req.url === "/__seen") { res.end(JSON.stringify(seen)); seen.length = 0; return; }
     const prov = req.url.split("/")[1];
     const body = JSON.parse(b || "{}");
-    seen.push({ prov, auth: req.headers.authorization, model: body.model, tools: (body.tools || []).length, hasTool: body.messages.some((m) => m.role === "tool"), json: !!body.response_format, sys: body.messages[0].content.slice(0, 20), img: JSON.stringify(body.messages).includes("image_url") });
+    seen.push({ prov, auth: req.headers.authorization, model: body.model, tools: (body.tools || []).length, hasTool: body.messages.some((m) => m.role === "tool"), json: !!body.response_format, sys: body.messages[0].content.slice(0, 20), img: JSON.stringify(body.messages).includes("image_url"), mtc: "max_completion_tokens" in body, url: req.url });
     const m = mode[prov];
     if (m === "429") { res.writeHead(429, { "retry-after": "3600" }); return res.end("{}"); }
     if (m === "500") { res.writeHead(500); return res.end("boom"); }

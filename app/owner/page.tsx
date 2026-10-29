@@ -2,10 +2,12 @@
 // Owner-only status page. Not linked from Fluxus. Shows which free AI is up and use per demo code.
 import { useEffect, useState } from "react";
 
+type Paid = { capUsd: number; spentUsd: number; on: boolean; why: string; byProvider: { provider: string; spentUsd: number; answers: number }[] };
 type Health = {
+  paid?: Paid;
   store: string;
   storeError?: string | null;
-  providers: { id: string; models: Record<string, string>; hasKey: boolean; coolingUntil: string | null }[];
+  providers: { id: string; label?: string; paidPrice?: string | null; models: Record<string, string>; hasKey: boolean; coolingUntil: string | null }[];
   codes: { label: string; role: string; cap: number }[];
   today: { label: string; provider: string; status: string; n: number }[];
 };
@@ -44,12 +46,29 @@ export default function Owner() {
       <h1 style={{ marginTop: 0 }}>Fluxy status</h1>
       {h.storeError && <p style={{ color: "#ff8a7a" }}>Database problem: {h.storeError}</p>}
       <p>Answers today: <b>{okToday}</b> · storage: {h.store === "supabase" ? "database" : "memory (resets on restart)"}</p>
-      <h2>Free AIs (in the order Fluxy tries them)</h2>
+      {h.paid && (
+        <section aria-labelledby="paid-h">
+          <h2 id="paid-h">Paid credits this month</h2>
+          <p style={{ fontSize: 20 }}><b>${h.paid.spentUsd.toFixed(4)}</b> of ${h.paid.capUsd.toFixed(2)} cap
+            {" "}<span style={{ color: h.paid.on ? "#66ffa3" : "#ffd47a" }}>· {h.paid.on ? "paid backups ON" : "paid backups OFF"}</span></p>
+          <div role="meter" aria-label="Paid credits used" aria-valuemin={0} aria-valuemax={h.paid.capUsd} aria-valuenow={h.paid.spentUsd}
+            style={{ height: 10, borderRadius: 999, background: "#2e2a29", overflow: "hidden", maxWidth: 480 }}>
+            <div style={{ height: "100%", width: `${h.paid.capUsd ? Math.min(100, (h.paid.spentUsd / h.paid.capUsd) * 100) : 0}%`, background: h.paid.capUsd && h.paid.spentUsd / h.paid.capUsd > 0.8 ? "#ffd47a" : "#66ffa3" }} />
+          </div>
+          {h.paid.why && <p style={{ color: "#ffd47a" }}>{h.paid.why}</p>}
+          {h.paid.byProvider.length > 0 && (
+            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }}>
+              <thead><tr><th scope="col" style={cell}>Paid AI</th><th scope="col" style={cell}>Spent</th><th scope="col" style={cell}>Answers</th></tr></thead>
+              <tbody>{h.paid.byProvider.map((b) => (<tr key={b.provider}><td style={cell}>{b.provider}</td><td style={cell}>${b.spentUsd.toFixed(4)}</td><td style={cell}>{b.answers}</td></tr>))}</tbody>
+            </table>)}
+          <p style={{ color: "#bab2ac", fontSize: 13 }}>Paid AIs are only used after every free AI is out, and stop before the cap. "Test each AI" calls are tiny and not counted here.</p>
+        </section>)}
+      <h2>AIs (in the order Fluxy tries them: free first, then paid)</h2>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead><tr><th scope="col" style={cell}>AI</th><th scope="col" style={cell}>Key added</th><th scope="col" style={cell}>Status</th><th scope="col" style={cell}>Models</th></tr></thead>
         <tbody>{h.providers.map((p) => (
           <tr key={p.id}>
-            <td style={cell}>{p.id}</td><td style={cell}>{p.hasKey ? "yes" : "no"}</td>
+            <td style={cell}>{p.label || p.id}{p.paidPrice ? <><br /><small style={{ color: "#bab2ac" }}>paid · {p.paidPrice}</small></> : null}</td><td style={cell}>{p.hasKey ? "yes" : "no"}</td>
             <td style={cell}>{!p.hasKey ? "off" : p.coolingUntil ? `resting until ${new Date(p.coolingUntil).toLocaleString()}` : "ready"}</td>
             <td style={cell}>{Object.values(p.models).join(", ")}</td>
           </tr>))}</tbody>

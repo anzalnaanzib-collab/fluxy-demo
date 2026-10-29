@@ -17,11 +17,43 @@ export interface Store {
   answersToday(label: string): Promise<number>;
   record(u: UsageRow): Promise<void>;
   today(): Promise<{ label: string; provider: ProviderId; status: string; n: number }[]>;
+  // Paid ledger (micro-dollars). reliable=false means paid AIs must stay off.
+  reliable: boolean;
+  paidReserve(r: { requestId: string; provider: ProviderId; model: string; label: string; tier: Tier; est: number; cap: number }): Promise<boolean>;
+  paidSettle(requestId: string, provider: ProviderId, cost: number, inTok: number, outTok: number): Promise<void>;
+  paidRelease(requestId: string, provider: ProviderId): Promise<void>;
+  paidMonth(): Promise<{ total: number; byProvider: { provider: string; spent: number; answers: number }[] }>;
 }
 
 const startOfUtcDay = () => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); return d.getTime(); };
 
+type Ledger = { requestId: string; provider: ProviderId; status: "reserved" | "ok" | "released"; reserved: number; cost: number; at: number };
 class MemoryStore implements Store {
+  // Memory resets when the server restarts, so a cap kept here can't be trusted.
+  reliable = process.env.FLUXY_ALLOW_PAID_WITHOUT_DB === "1";
+  ledger: Ledger[] = [];
+  private monthStart() { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1); }
+  private held() { const m = this.monthStart(); return this.ledger.filter((l) => l.at >= m).reduce((n, l) => n + l.cost + (l.status === "reserved" ? l.reserved : 0), 0); }
+  async paidReserve(r: { requestId: string; provider: ProviderId; est: number; cap: number }) {
+    if (this.ledger.some((l) => l.requestId === r.requestId && l.provider === r.provider)) return true;
+    if (this.held() + r.est > r.cap) return false;
+    this.ledger.push({ requestId: r.requestId, provider: r.provider, status: "reserved", reserved: r.est, cost: 0, at: Date.now() });
+    return true;
+  }
+  async paidSettle(requestId: string, provider: ProviderId, cost: number) {
+    const l = this.ledger.find((x) => x.requestId === requestId && x.provider === provider); if (l) { l.cost = cost; l.status = "ok"; }
+  }
+  async paidRelease(requestId: string, provider: ProviderId) {
+    const l = this.ledger.find((x) => x.requestId === requestId && x.provider === provider && x.status === "reserved"); if (l) l.status = "released";
+  }
+  async paidMonth() {
+    const m = this.monthStart(), by = new Map<string, { provider: string; spent: number; answers: number }>();
+    for (const l of this.ledger) if (l.at >= m) {
+      const e = by.get(l.provider) || { provider: l.provider, spent: 0, answers: 0 };
+      e.spent += l.cost + (l.status === "reserved" ? l.reserved : 0); if (l.status === "ok") e.answers++; by.set(l.provider, e);
+    }
+    return { total: this.held(), byProvider: [...by.values()] };
+  }
   cool = new Map<ProviderId, number>();
   hits = new Map<string, number>();
   rows: (UsageRow & { at: number })[] = [];
@@ -54,7 +86,26 @@ class MemoryStore implements Store {
 }
 
 class SupabaseStore implements Store {
+  reliable = true;
   constructor(private db: SupabaseClient) {}
+  async paidReserve(r: { requestId: string; provider: ProviderId; model: string; label: string; tier: Tier; est: number; cap: number }) {
+    const { data, error } = await this.db.rpc("paid_reserve", { req: r.requestId, prov: r.provider, mdl: r.model, lbl: r.label, tr: r.tier, est: r.est, cap: r.cap });
+    if (error) throw error;
+    return data === true;
+  }
+  async paidSettle(requestId: string, provider: ProviderId, cost: number, inTok: number, outTok: number) {
+    const { error } = await this.db.rpc("paid_settle", { req: requestId, prov: provider, cost, inp: inTok, outp: outTok });
+    if (error) throw error;
+  }
+  async paidRelease(requestId: string, provider: ProviderId) {
+    const { error } = await this.db.rpc("paid_release", { req: requestId, prov: provider });
+    if (error) throw error;
+  }
+  async paidMonth() {
+    const [t, b] = await Promise.all([this.db.rpc("paid_month_micros"), this.db.rpc("paid_by_provider")]);
+    if (t.error) throw t.error; if (b.error) throw b.error;
+    return { total: Number(t.data || 0), byProvider: ((b.data || []) as { provider: string; spent_micros: number; answers: number }[]).map((r) => ({ provider: r.provider, spent: Number(r.spent_micros), answers: r.answers })) };
+  }
   async coolingDown() {
     const { data, error } = await this.db.from("provider_cooldowns").select("provider,cooldown_until").gt("cooldown_until", new Date().toISOString());
     if (error) throw error;

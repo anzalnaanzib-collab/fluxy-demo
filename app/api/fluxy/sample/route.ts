@@ -26,7 +26,7 @@ const Body = z.object({
   messages: z.array(Msg).min(1).max(60),
   tools: z.array(z.object({ name: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/), description: z.string().max(2000).optional(), inputSchema: z.any().optional() })).max(20).optional(),
   json: z.boolean().optional(),
-  stick: z.enum(["gemini", "groq", "openrouter"]).optional(),
+  stick: z.enum(["gemini", "groq", "openrouter", "xai", "anthropic", "perplexity", "gemini_paid", "openai"]).optional(),
 });
 
 const err = (code: string, status: number) => Response.json({ error: code }, { status });

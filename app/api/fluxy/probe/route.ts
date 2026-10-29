@@ -11,13 +11,13 @@ export async function POST(req: Request) {
   const s = readSession(req);
   if (!s || s.role !== "owner") return Response.json({ error: "not_granted" }, { status: 403 });
   const results = await Promise.all(PROVIDERS.map(async (p) => {
-    if (!hasKey(p)) return { id: p.id, ok: false, status: 0, detail: "No key added in Vercel settings" };
+    if (!hasKey(p)) return { id: p.id, ok: false, status: 0, detail: p.paid ? "Not added (optional paid backup)" : "No key added in Vercel settings" };
     const t0 = Date.now();
     try {
-      const r = await fetch(`${p.baseUrl}/chat/completions`, {
+      const r = await fetch(`${p.baseUrl}${p.path || "/chat/completions"}`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${process.env[p.keyEnv]}`, ...(p.extraHeaders || {}) },
-        body: JSON.stringify({ model: p.models.quick, max_tokens: 20, messages: [{ role: "system", content: FLUXY_SYSTEM }, { role: "user", content: "Say hi in 3 words." }] }),
+        body: JSON.stringify({ model: p.models.quick, [p.maxTokensField || "max_tokens"]: 20, messages: [{ role: "system", content: FLUXY_SYSTEM }, { role: "user", content: "Say hi in 3 words." }] }),
         signal: AbortSignal.timeout(25_000),
       });
       const text = await r.text();
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
         tools: p.can.tools ? [{ name: "add_posts", description: "Add posts to the calendar", inputSchema: { type: "object", properties: { posts: { type: "array", items: { type: "object", properties: { title: { type: "string" } }, required: ["title"] } } }, required: ["posts"] } }] : undefined };
       let chat = "";
       try {
-        const c = await fetch(`${p.baseUrl}/chat/completions`, {
+        const c = await fetch(`${p.baseUrl}${p.path || "/chat/completions"}`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${process.env[p.keyEnv]}`, ...(p.extraHeaders || {}) },
           body: JSON.stringify(chatBody(p, chatReq)),

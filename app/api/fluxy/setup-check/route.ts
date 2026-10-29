@@ -18,6 +18,14 @@ export async function GET() {
     GROQ_API_KEY: has("GROQ_API_KEY") ? "ok" : "ok (optional, not added)",
     OPENROUTER_API_KEY: has("OPENROUTER_API_KEY") ? "ok" : "ok (optional, not added)",
     DATABASE: has("SUPABASE_URL") || has("SUPABASE_SERVICE_ROLE_KEY") ? (has("SUPABASE_URL") && has("SUPABASE_SERVICE_ROLE_KEY") ? "ok (Supabase in use)" : "half set: add both SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, or remove both") : "ok (not used)",
+    PAID_AIS: (() => {
+      const keys = ["XAI_API_KEY", "ANTHROPIC_API_KEY", "PERPLEXITY_API_KEY", "GEMINI_PAID_API_KEY", "OPENAI_API_KEY"].filter(has);
+      const cap = Number(process.env.FLUXY_PAID_MONTHLY_CAP_USD || 0);
+      if (!keys.length) return "ok (none added)";
+      if (!(cap > 0)) return `ok, but OFF: ${keys.length} paid key(s) added; set FLUXY_PAID_MONTHLY_CAP_USD to turn them on`;
+      if (!has("SUPABASE_URL")) return "ok, but OFF: paid AIs need the Supabase database";
+      return `ok (${keys.length} paid AI(s), cap $${cap}/month)`;
+    })(),
     ANY_AI_KEY: ["GEMINI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY"].some(has) ? "ok" : "MISSING (add at least one AI key)",
   };
   const allOk = Object.values(checks).every((v) => v.startsWith("ok"));
