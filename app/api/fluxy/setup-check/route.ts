@@ -17,6 +17,7 @@ export async function GET() {
     GEMINI_API_KEY: has("GEMINI_API_KEY") ? "ok" : "ok (optional, not added)",
     GROQ_API_KEY: has("GROQ_API_KEY") ? "ok" : "ok (optional, not added)",
     OPENROUTER_API_KEY: has("OPENROUTER_API_KEY") ? "ok" : "ok (optional, not added)",
+    DATABASE: has("SUPABASE_URL") || has("SUPABASE_SERVICE_ROLE_KEY") ? (has("SUPABASE_URL") && has("SUPABASE_SERVICE_ROLE_KEY") ? "ok (Supabase in use)" : "half set: add both SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, or remove both") : "ok (not used)",
     ANY_AI_KEY: ["GEMINI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY"].some(has) ? "ok" : "MISSING (add at least one AI key)",
   };
   const allOk = Object.values(checks).every((v) => v.startsWith("ok"));

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 type Health = {
   store: string;
+  storeError?: string | null;
   providers: { id: string; models: Record<string, string>; hasKey: boolean; coolingUntil: string | null }[];
   codes: { label: string; role: string; cap: number }[];
   today: { label: string; provider: string; status: string; n: number }[];
@@ -41,6 +42,7 @@ export default function Owner() {
   return (
     <main style={box}>
       <h1 style={{ marginTop: 0 }}>Fluxy status</h1>
+      {h.storeError && <p style={{ color: "#ff8a7a" }}>Database problem: {h.storeError}</p>}
       <p>Answers today: <b>{okToday}</b> · storage: {h.store === "supabase" ? "database" : "memory (resets on restart)"}</p>
       <h2>Free AIs (in the order Fluxy tries them)</h2>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
