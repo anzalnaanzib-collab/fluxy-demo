@@ -3,6 +3,7 @@
 import { PROVIDERS, Provider, ProviderId, Tier, hasKey, GEMINI_FREE_BLOCKED, LIMITS, FLUXY_SYSTEM, PAID_CAP_USD, micros, costMicros } from "./config";
 import { getStore, Store } from "./store";
 import { LIVE_ADS_TOOL, LIVE_ADS_NOTE, liveAdsOn, liveAdsToolDef, isResearchPage, searchLiveAds } from "./liveads";
+import { VIDEO_TOOL, DESIGN_TOOL, MEDIA_NOTE, videoToolDef, designToolDef, heygenOn, modaOn, startVideo, startDesign } from "./media";
 
 export type Msg =
   | { role: "system" | "user" | "assistant"; content: string | Part[]; tool_calls?: ToolCall[] }
@@ -16,14 +17,26 @@ export type SampleReq = {
   page?: string;            // Fluxus screen the question came from, e.g. "research"
 };
 
-// Research screens quietly get the live-ads lookup (only AIs that can use tools).
+// Fluxy's own hidden abilities, run on the server (only AIs that can use tools):
+// live ads on research screens; presenter videos and designed graphics anywhere, when asked.
 const wantsLiveAds = (p: Provider, req: SampleReq) => p.can.tools && p.api !== "pplx-agent" && liveAdsOn() && isResearchPage(req.page);
+function internalTools(p: Provider, req: SampleReq): { defs: ToolDef[]; note: string } {
+  if (!p.can.tools || p.api === "pplx-agent") return { defs: [], note: "" };
+  const defs: ToolDef[] = [];
+  let note = "";
+  if (wantsLiveAds(p, req)) { defs.push(liveAdsToolDef); note += LIVE_ADS_NOTE; }
+  const media = [heygenOn() && videoToolDef, modaOn() && designToolDef].filter(Boolean) as ToolDef[];
+  if (media.length) { defs.push(...media); note += MEDIA_NOTE; }
+  return { defs, note };
+}
+const INTERNAL = new Set([LIVE_ADS_TOOL, VIDEO_TOOL, DESIGN_TOOL]);
 const MAX_LIVE_AD_STEPS = 2;
 
 export type Ev =
   | { t: "text"; v: string }
   | { t: "tool_calls"; calls: { id: string; name: string; args: string }[] }
   | { t: "done"; route: ProviderId; usage?: { in?: number; out?: number } }
+  | { t: "media"; job: string; kind: "video" | "design"; title: string }
   | { t: "error"; code: "rate_limited" | "bad_request" | "unavailable" };
 
 const hasImages = (m: Msg[]) => m.some((x) => Array.isArray(x.content) && x.content.some((p) => p.type === "image_url"));
@@ -81,8 +94,8 @@ const noReasoning = new Set<ProviderId>();
 
 export function body(p: Provider, req: SampleReq) {
   if (p.api === "pplx-agent") return pplxBody(p, req);
-  const ads = wantsLiveAds(p, req);
-  const sys: Msg = { role: "system", content: FLUXY_SYSTEM + (ads ? LIVE_ADS_NOTE : "") + (req.json ? " Reply with valid JSON only, no code fences." : "") };
+  const extra = internalTools(p, req);
+  const sys: Msg = { role: "system", content: FLUXY_SYSTEM + extra.note + (req.json ? " Reply with valid JSON only, no code fences." : "") };
   const b: Record<string, unknown> = {
     model: p.models[req.tier],
     messages: [sys, ...req.messages],
@@ -91,7 +104,7 @@ export function body(p: Provider, req: SampleReq) {
   b[p.maxTokensField || "max_tokens"] = LIMITS.maxOutputTokens[req.tier];
   if (p.id !== "openrouter" && p.id !== "perplexity") b.stream_options = { include_usage: true };
   if (p.reasoningEffort && p.reasoningEffort !== "off" && !noReasoning.has(p.id)) b.reasoning_effort = p.reasoningEffort;
-  const allTools = [...(req.tools || []), ...(ads ? [liveAdsToolDef] : [])];
+  const allTools = [...(req.tools || []), ...extra.defs];
   if (req.json && p.can.json && !allTools.length) b.response_format = { type: "json_object" };
   if (allTools.length)
     b.tools = allTools.map((t) => ({
@@ -208,7 +221,7 @@ export async function* route(req: SampleReq, opts: { label: string; country: str
       if (p.paid) {
         // Hold the worst-case cost first; skip this AI if it would pass the monthly cap.
         // A research answer may take extra steps (live-ads lookups): hold enough for all of them.
-        const steps = wantsLiveAds(p, thisReq) ? 1 + MAX_LIVE_AD_STEPS : 1;
+        const steps = internalTools(p, thisReq).defs.length ? 1 + MAX_LIVE_AD_STEPS : 1;
         est = costMicros(p, estimateInputTokens(thisReq) + 3000 * (steps - 1), LIMITS.maxOutputTokens[req.tier]) * steps;
         let ok = false;
         try { ok = await store.paidReserve({ requestId: req.requestId, provider: p.id, model: p.models[req.tier], label: opts.label, tier: req.tier, est, cap: capMicros }); } catch (e) { console.warn(`[fluxy] ledger error: ${String((e as Error)?.message || e).slice(0, 200)}`); }
@@ -233,17 +246,25 @@ export async function* route(req: SampleReq, opts: { label: string; country: str
           r = await gen.next();
         }
         add(r.value);
-        const internal = calls.filter((c) => c.name === LIVE_ADS_TOOL);
-        const client = calls.filter((c) => c.name !== LIVE_ADS_TOOL);
+        const internal = calls.filter((c) => INTERNAL.has(c.name));
+        const client = calls.filter((c) => !INTERNAL.has(c.name));
         if (!internal.length || step >= MAX_LIVE_AD_STEPS) {
           if (client.length) { sent = true; yield { t: "tool_calls", calls: client }; }
           break;
         }
-        const results = await Promise.all(internal.map((c) => {
-          let a: { query?: string; countries?: string[] } = {};
+        const results: unknown[] = [];
+        for (const c of internal) {
+          let a: Record<string, unknown> = {};
           try { a = JSON.parse(c.args || "{}"); } catch {}
-          return searchLiveAds({ query: a.query, countries: a.countries });
-        }));
+          if (c.name === LIVE_ADS_TOOL) { results.push(await searchLiveAds({ query: a.query as string, countries: a.countries as string[] })); continue; }
+          const idem = `${req.requestId}:${c.id}`;
+          const started = c.name === VIDEO_TOOL ? await startVideo(a as { script?: string }, idem) : await startDesign(a as { prompt?: string }, idem);
+          if (started.ok) {
+            sent = true; // a job has started: never silently retry this answer on another AI
+            yield { t: "media", job: started.job, kind: started.kind, title: started.title };
+            results.push({ ok: true, status: "started", note: "It will appear in the Fluxy tray at the bottom right in a few minutes." });
+          } else results.push(started);
+        }
         stepReq = { ...stepReq, messages: [
           ...stepReq.messages,
           { role: "assistant", content: "", tool_calls: internal.map((c) => ({ id: c.id, type: "function" as const, function: { name: c.name, arguments: c.args || "{}" } })) },

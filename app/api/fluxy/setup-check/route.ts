@@ -27,6 +27,8 @@ export async function GET() {
       return `ok (${keys.length} paid AI(s), cap $${cap}/month)`;
     })(),
     META_AD_LIBRARY_TOKEN: has("META_AD_LIBRARY_TOKEN") ? "ok (live ads on in research screens)" : "ok (optional, not added)",
+    PRESENTER_VIDEOS: has("HEYGEN_API_KEY") ? (has("HEYGEN_AVATAR_ID") ? "ok (on)" : "half set: add HEYGEN_AVATAR_ID (see Test each AI on /owner)") : "ok (optional, not added)",
+    DESIGNED_GRAPHICS: has("MODA_API_KEY") ? "ok (on)" : "ok (optional, not added)",
     ANY_AI_KEY: ["GEMINI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY"].some(has) ? "ok" : "MISSING (add at least one AI key)",
   };
   const allOk = Object.values(checks).every((v) => v.startsWith("ok"));

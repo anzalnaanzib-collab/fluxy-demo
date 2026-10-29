@@ -76,6 +76,7 @@
         var ev; try { ev = JSON.parse(line); } catch (_) { continue; }
         if (ev.t === "text") { text += ev.v; onDelta(ev.v); }
         else if (ev.t === "tool_calls") calls = ev.calls || [];
+        else if (ev.t === "media") trayAdd(ev);
         else if (ev.t === "done") route = ev.route;
         else if (ev.t === "error") throw fail(ev.code || "unavailable");
       }
@@ -252,7 +253,75 @@
     document.body.appendChild(n);
   }
 
+  /* ---------- Fluxy tray: presenter videos and designed graphics being made ---------- */
+  var trayEl = null, jobs = [];
+  function saveJobs() { try { sessionStorage.setItem("fxb-jobs", JSON.stringify(jobs.slice(-8))); } catch (_) {} }
+  function loadJobs() { try { jobs = JSON.parse(sessionStorage.getItem("fxb-jobs") || "[]") || []; } catch (_) { jobs = []; } }
+  function trayAdd(ev) {
+    if (jobs.some(function (j) { return j.job === ev.job; })) return;
+    jobs.push({ job: ev.job, kind: ev.kind, title: ev.title || (ev.kind === "video" ? "Presenter video" : "Design"), status: "working", at: Date.now() });
+    saveJobs(); renderTray(); poll(ev.job);
+  }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function renderTray() {
+    if (!document.body) return;
+    if (!jobs.length) { if (trayEl) { trayEl.remove(); trayEl = null; } return; }
+    if (!trayEl) {
+      trayEl = el("section", "fxb-tray");
+      trayEl.setAttribute("aria-label", "Fluxy is making");
+      trayEl.setAttribute("aria-live", "polite");
+      document.body.appendChild(trayEl);
+    }
+    trayEl.textContent = "";
+    var working = jobs.filter(function (j) { return j.status === "working"; }).length;
+    trayEl.appendChild(el("h2", "fxb-tray-h", working ? "Fluxy is making " + working + "…" : "Ready from Fluxy"));
+    jobs.slice().reverse().forEach(function (j) {
+      var card = el("article", "fxb-job " + j.status);
+      var top = el("div", "fxb-job-top");
+      top.appendChild(el("span", "fxb-job-kind", j.kind === "video" ? "Presenter video" : "Design"));
+      var x = el("button", "fxb-x"); x.type = "button"; x.setAttribute("aria-label", "Remove " + j.title); x.innerHTML = ICON_X;
+      x.addEventListener("click", function () { jobs = jobs.filter(function (k) { return k.job !== j.job; }); saveJobs(); renderTray(); });
+      top.appendChild(x); card.appendChild(top);
+      card.appendChild(el("p", "fxb-job-title", j.title));
+      if (j.status === "working") {
+        var bar = el("div", "fxb-job-bar"); bar.setAttribute("role", "progressbar"); bar.setAttribute("aria-label", "Making " + j.title);
+        bar.appendChild(el("span")); card.appendChild(bar);
+        card.appendChild(el("p", "fxb-job-note", j.kind === "video" ? "Usually ready in a few minutes. You can keep working." : "Usually ready in a minute or two. You can keep working."));
+      } else if (j.status === "done") {
+        if (j.kind === "video") {
+          var v = el("video", "fxb-job-media"); v.controls = true; v.preload = "metadata"; v.src = j.url; if (j.thumbnail) v.poster = j.thumbnail;
+          v.setAttribute("aria-label", j.title); card.appendChild(v);
+        } else {
+          var im = el("img", "fxb-job-media"); im.src = j.url; im.alt = j.title; card.appendChild(im);
+        }
+        var a = el("a", "fxb-btn fxb-dl", "Download"); a.href = j.url; a.target = "_blank"; a.rel = "noopener"; a.setAttribute("download", "");
+        card.appendChild(a);
+      } else {
+        card.appendChild(el("p", "fxb-job-note", j.message || "This one couldn't be made. Ask Fluxy to try again."));
+      }
+      trayEl.appendChild(card);
+    });
+  }
+  function poll(job) {
+    var tries = 0;
+    var tick = async function () {
+      var j = jobs.find(function (k) { return k.job === job; });
+      if (!j || j.status !== "working") return;
+      if (++tries > 180) { j.status = "failed"; j.message = "This is taking too long. Ask Fluxy to try again."; saveJobs(); renderTray(); return; }
+      try {
+        var r = await fetch(API + "/media?job=" + encodeURIComponent(job), { credentials: "same-origin", cache: "no-store" });
+        if (r.status === 401) { showGate(); return setTimeout(tick, 15000); }
+        var s = await r.json();
+        if (s.status === "done") { j.status = "done"; j.url = s.url; j.thumbnail = s.thumbnail; saveJobs(); renderTray(); toast((j.kind === "video" ? "Your presenter video" : "Your design") + " is ready.", "info"); return; }
+        if (s.status === "failed") { j.status = "failed"; j.message = s.message; saveJobs(); renderTray(); return; }
+      } catch (_) {}
+      setTimeout(tick, j.kind === "video" ? 10000 : 6000);
+    };
+    setTimeout(tick, 4000);
+  }
+
   async function start() {
+    loadJobs(); renderTray(); jobs.forEach(function (j) { if (j.status === "working") poll(j.job); });
     showNote();
     try {
       var r = await fetch(API + "/session", { credentials: "same-origin", cache: "no-store" });

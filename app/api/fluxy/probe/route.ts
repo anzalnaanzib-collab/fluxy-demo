@@ -57,5 +57,24 @@ export async function POST(req: Request) {
       results.push({ id: "live_ads", model: "research screens", ok: false, status: 0, ms: 0, detail: String((e as Error).message) });
     }
   }
+  // Presenter videos (HeyGen): checks the key and shows a few avatar IDs to choose from.
+  if (process.env.HEYGEN_API_KEY) {
+    try {
+      const r = await fetch(`${process.env.HEYGEN_BASE_URL || "https://api.heygen.com"}/v3/avatars`, { headers: { "x-api-key": process.env.HEYGEN_API_KEY }, signal: AbortSignal.timeout(20_000) });
+      const t = await r.text();
+      const ids = [...t.matchAll(/"(?:avatar_id|id)"\s*:\s*"([^"]+)"[^{}]*?"(?:avatar_name|name)"\s*:\s*"([^"]+)"/g)].slice(0, 5).map((m) => `${m[2]} = ${m[1]}`);
+      const chosen = process.env.HEYGEN_AVATAR_ID ? `using avatar ${process.env.HEYGEN_AVATAR_ID}` : "set HEYGEN_AVATAR_ID to one of these";
+      results.push({ id: "presenter_videos", model: "HeyGen", ok: r.ok && !!process.env.HEYGEN_AVATAR_ID, status: r.status, ms: 0,
+        detail: r.ok ? `key works; ${chosen}. Avatars: ${ids.join(" | ") || t.slice(0, 200)}` : t.slice(0, 300) });
+    } catch (e) { results.push({ id: "presenter_videos", model: "HeyGen", ok: false, status: 0, ms: 0, detail: String((e as Error).message) }); }
+  }
+  // Designed graphics (Moda): checks the key and shows the credit balance.
+  if (process.env.MODA_API_KEY) {
+    try {
+      const r = await fetch(`${process.env.MODA_BASE_URL || "https://api.moda.app/v1"}/credits`, { headers: { authorization: `Bearer ${process.env.MODA_API_KEY}`, "Moda-Version": process.env.MODA_VERSION || "2026-05-01" }, signal: AbortSignal.timeout(20_000) });
+      const t = await r.text();
+      results.push({ id: "designed_graphics", model: "Moda", ok: r.ok, status: r.status, ms: 0, detail: r.ok ? `key works; credits: ${t.slice(0, 200)}` : t.slice(0, 300) });
+    } catch (e) { results.push({ id: "designed_graphics", model: "Moda", ok: false, status: 0, ms: 0, detail: String((e as Error).message) }); }
+  }
   return Response.json({ results }, { headers: { "cache-control": "no-store" } });
 }

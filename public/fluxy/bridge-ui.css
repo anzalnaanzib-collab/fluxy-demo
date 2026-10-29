@@ -38,3 +38,21 @@
 
 @keyframes fxb-in{to{opacity:1}}
 @media (prefers-reduced-motion:reduce){.fxb-note{animation:none;opacity:1}}
+
+/* Fluxy tray: presenter videos and designs being made */
+.fxb-tray{position:fixed;right:12px;bottom:96px;z-index:2147482400;width:min(300px,calc(100vw - 24px));max-height:min(70vh,560px);
+  overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:var(--fxb-radius-lg);
+  background:var(--fxb-surface);border:1px solid var(--fxb-border);box-shadow:var(--fxb-shadow-pop);color:var(--fxb-text);font:500 13px/18px var(--fxb-font)}
+.fxb-tray-h{margin:2px 4px;font:700 13px/18px var(--fxb-font-display)}
+.fxb-job{background:var(--fxb-surface-2);border:1px solid var(--fxb-border);border-radius:var(--fxb-radius-md);padding:8px 10px}
+.fxb-job-top{display:flex;align-items:center;justify-content:space-between}
+.fxb-job-kind{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--fxb-text-muted)}
+.fxb-job-title{margin:2px 0 6px;font-weight:600;overflow-wrap:anywhere}
+.fxb-job-note{margin:6px 0 0;color:var(--fxb-text-muted);font-size:12px}
+.fxb-job.failed .fxb-job-note{color:var(--fxb-danger)}
+.fxb-job-bar{height:6px;border-radius:999px;background:var(--fxb-border);overflow:hidden}
+.fxb-job-bar span{display:block;height:100%;width:40%;border-radius:999px;background:var(--fxb-accent);animation:fxb-slide 1.4s var(--fxb-ease) infinite}
+.fxb-job-media{display:block;width:100%;max-height:320px;object-fit:contain;border-radius:10px;background:#000;margin:4px 0 8px}
+.fxb-dl{display:grid;place-items:center;height:36px;text-decoration:none}
+@keyframes fxb-slide{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+@media (prefers-reduced-motion:reduce){.fxb-job-bar span{animation:none;width:100%;opacity:.5}}

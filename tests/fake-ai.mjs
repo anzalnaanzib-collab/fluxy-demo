@@ -2,6 +2,7 @@
 // POST /__mode {gemini:"ok"|"429"|"500"|"tools"|"slowfail", ...} sets behaviour.
 import http from "node:http";
 const mode = { gemini: "ok", groq: "ok", openrouter: "ok" };
+// (hgPolls / mdPolls count status checks for the fake media jobs)
 const seen = [];
 const sse = (res, chunks) => {
   res.writeHead(200, { "content-type": "text/event-stream" });
@@ -16,6 +17,28 @@ http.createServer((req, res) => {
       seen.push({ prov: "meta", q: u.searchParams.get("search_terms"), countries: u.searchParams.get("ad_reached_countries"), auth: req.headers.authorization });
       if (mode.meta === "expired") { res.writeHead(400); return res.end(JSON.stringify({ error: { message: "Session has expired", code: 190 } })); }
       return res.end(JSON.stringify({ data: [{ id: "1", page_name: "Bean Co", ad_creative_bodies: ["Fresh roast, 20% off"], ad_creative_link_titles: ["Shop now"], ad_delivery_start_time: "2026-10-01", publisher_platforms: ["facebook", "instagram"], ad_snapshot_url: "https://www.facebook.com/ads/archive/render_ad/?id=1" }] }));
+    }
+    // ---- fake HeyGen ----
+    if (req.url.startsWith("/hg/")) {
+      seen.push({ prov: "heygen", method: req.method, url: req.url, key: req.headers["x-api-key"], body: b ? JSON.parse(b) : null });
+      if (req.method === "POST") return res.end(JSON.stringify({ data: { video_id: "vid1", status: "waiting" } }));
+      mode.hgPolls = (mode.hgPolls || 0) + 1;
+      return res.end(JSON.stringify({ data: mode.hgPolls < 2 ? { status: "processing" } : { status: "completed", video_url: "http://localhost:4010/files/v.mp4", thumbnail_url: "http://localhost:4010/files/d.png", duration: 12 } }));
+    }
+    // ---- fake Moda ----
+    if (req.url.startsWith("/moda/")) {
+      const body = b ? JSON.parse(b) : null;
+      seen.push({ prov: "moda", method: req.method, url: req.url, auth: req.headers.authorization, ver: req.headers["moda-version"], body });
+      if (req.url === "/moda/tasks" && req.method === "POST") {
+        if (body.format.category === "social") { res.writeHead(400); return res.end(JSON.stringify({ error: { message: "Unknown format category 'social'" } })); }
+        return res.end(JSON.stringify({ id: "task_1", status: "queued" }));
+      }
+      if (req.url.startsWith("/moda/tasks/")) { mode.mdPolls = (mode.mdPolls || 0) + 1; return res.end(JSON.stringify(mode.mdPolls < 2 ? { id: "task_1", status: "running" } : { id: "task_1", status: "succeeded", result: { canvas_id: "cv_9" } })); }
+      if (req.url.startsWith("/moda/canvases/cv_9/export")) return res.end(JSON.stringify({ status: "completed", url: "http://localhost:4010/files/d.png" }));
+    }
+    if (req.url.startsWith("/files/")) {
+      const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+      res.writeHead(200, { "content-type": req.url.endsWith(".png") ? "image/png" : "video/mp4", "access-control-allow-origin": "*" }); return res.end(png);
     }
     if (req.url === "/__seen") { res.end(JSON.stringify(seen)); seen.length = 0; return; }
     const prov = req.url.split("/")[1];
@@ -40,6 +63,14 @@ http.createServer((req, res) => {
     if (m === "429") { res.writeHead(429, { "retry-after": "3600" }); return res.end("{}"); }
     if (m === "500") { res.writeHead(500); return res.end("boom"); }
     const toolNames = (body.tools || []).map((t) => t.function.name);
+    for (const [md, tn, args] of [["makevideo", "make_presenter_video", '{"script":"Hi! Our summer sale starts today.","title":"Summer sale promo","aspect":"9:16"}'], ["makedesign", "make_designed_graphic", '{"prompt":"Instagram post for Bean Co summer sale, 20% off","title":"Summer sale post","size":"post"}']]) {
+      if (m === md && toolNames.includes(tn)) {
+        const tm = body.messages.find((x) => x.role === "tool");
+        if (!tm) return sse(res, [{ choices: [{ delta: { tool_calls: [{ index: 0, id: "mk1", function: { name: tn, arguments: args } }] } }] }, { choices: [], usage: { prompt_tokens: 30, completion_tokens: 5 } }]);
+        const r = JSON.parse(tm.content);
+        return sse(res, [{ choices: [{ delta: { content: r.ok ? "On it! It'll appear in the tray shortly." : `Couldn't start: ${r.error}` } }] }, { choices: [], usage: { prompt_tokens: 50, completion_tokens: 9 } }]);
+      }
+    }
     if (m === "liveads" && toolNames.includes("find_live_ads")) {
       const toolMsg = body.messages.find((x) => x.role === "tool");
       if (!toolMsg) return sse(res, [{ choices: [{ delta: { tool_calls: [{ index: 0, id: "la1", function: { name: "find_live_ads", arguments: '{"query":"Bean Co","countries":["DE"]}' } }] } }] }, { choices: [], usage: { prompt_tokens: 30, completion_tokens: 5 } }]);
