@@ -22,7 +22,7 @@ async function run(p: (typeof PROVIDERS)[number], req: SampleReq, ms: number) {
 export async function POST(req: Request) {
   const s = readSession(req);
   if (!s || s.role !== "owner") return Response.json({ error: "not_granted" }, { status: 403 });
-  const results = await Promise.all(PROVIDERS.map(async (p) => {
+  const results: { id: string; model?: string; ok: boolean; status: number; ms?: number; detail: string }[] = await Promise.all(PROVIDERS.map(async (p) => {
     if (!hasKey(p)) return { id: p.id, ok: false, status: 0, detail: p.paid ? "Not added (optional paid backup)" : "No key added in Vercel settings" };
     const t0 = Date.now();
     let detail = "", ok = false;
@@ -45,5 +45,17 @@ export async function POST(req: Request) {
     }
     return { id: p.id, model: p.models.quick, ok, status: ok ? 200 : 0, ms: Date.now() - t0, detail };
   }));
+  if (process.env.META_AD_LIBRARY_TOKEN) {
+    // Same request Fluxy makes: one ad for "coffee" in Germany.
+    try {
+      const u = new URL("/api/fluxy/ads?q=coffee&countries=DE&limit=1", req.url);
+      const r = await fetch(u, { headers: { cookie: req.headers.get("cookie") || "" }, signal: AbortSignal.timeout(25_000) });
+      const j = await r.json();
+      results.push({ id: "live_ads", model: "research screens", ok: r.ok, status: r.status, ms: 0,
+        detail: r.ok ? `found ${j.count} ad(s)` + (j.ads?.[0] ? `: ${j.ads[0].page}` : "") : `${j.error}: ${j.message || ""}` });
+    } catch (e) {
+      results.push({ id: "live_ads", model: "research screens", ok: false, status: 0, ms: 0, detail: String((e as Error).message) });
+    }
+  }
   return Response.json({ results }, { headers: { "cache-control": "no-store" } });
 }

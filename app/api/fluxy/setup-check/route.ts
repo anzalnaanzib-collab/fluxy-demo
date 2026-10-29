@@ -26,6 +26,7 @@ export async function GET() {
       if (!has("SUPABASE_URL")) return "ok, but OFF: paid AIs need the Supabase database";
       return `ok (${keys.length} paid AI(s), cap $${cap}/month)`;
     })(),
+    META_AD_LIBRARY_TOKEN: has("META_AD_LIBRARY_TOKEN") ? "ok (live ads on in research screens)" : "ok (optional, not added)",
     ANY_AI_KEY: ["GEMINI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY"].some(has) ? "ok" : "MISSING (add at least one AI key)",
   };
   const allOk = Object.values(checks).every((v) => v.startsWith("ok"));

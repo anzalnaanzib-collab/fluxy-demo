@@ -2,6 +2,7 @@
 // and quietly moves to the next one if it is out of quota or failing.
 import { PROVIDERS, Provider, ProviderId, Tier, hasKey, GEMINI_FREE_BLOCKED, LIMITS, FLUXY_SYSTEM, PAID_CAP_USD, micros, costMicros } from "./config";
 import { getStore, Store } from "./store";
+import { LIVE_ADS_TOOL, LIVE_ADS_NOTE, liveAdsOn, liveAdsToolDef, isResearchPage, searchLiveAds } from "./liveads";
 
 export type Msg =
   | { role: "system" | "user" | "assistant"; content: string | Part[]; tool_calls?: ToolCall[] }
@@ -12,7 +13,12 @@ export type ToolDef = { name: string; description?: string; inputSchema?: unknow
 
 export type SampleReq = {
   requestId: string; tier: Tier; messages: Msg[]; tools?: ToolDef[]; json?: boolean; stick?: ProviderId;
+  page?: string;            // Fluxus screen the question came from, e.g. "research"
 };
+
+// Research screens quietly get the live-ads lookup (only AIs that can use tools).
+const wantsLiveAds = (p: Provider, req: SampleReq) => p.can.tools && p.api !== "pplx-agent" && liveAdsOn() && isResearchPage(req.page);
+const MAX_LIVE_AD_STEPS = 2;
 
 export type Ev =
   | { t: "text"; v: string }
@@ -75,7 +81,8 @@ const noReasoning = new Set<ProviderId>();
 
 export function body(p: Provider, req: SampleReq) {
   if (p.api === "pplx-agent") return pplxBody(p, req);
-  const sys: Msg = { role: "system", content: FLUXY_SYSTEM + (req.json ? " Reply with valid JSON only, no code fences." : "") };
+  const ads = wantsLiveAds(p, req);
+  const sys: Msg = { role: "system", content: FLUXY_SYSTEM + (ads ? LIVE_ADS_NOTE : "") + (req.json ? " Reply with valid JSON only, no code fences." : "") };
   const b: Record<string, unknown> = {
     model: p.models[req.tier],
     messages: [sys, ...req.messages],
@@ -84,9 +91,10 @@ export function body(p: Provider, req: SampleReq) {
   b[p.maxTokensField || "max_tokens"] = LIMITS.maxOutputTokens[req.tier];
   if (p.id !== "openrouter" && p.id !== "perplexity") b.stream_options = { include_usage: true };
   if (p.reasoningEffort && p.reasoningEffort !== "off" && !noReasoning.has(p.id)) b.reasoning_effort = p.reasoningEffort;
-  if (req.json && p.can.json && !(req.tools && req.tools.length)) b.response_format = { type: "json_object" };
-  if (req.tools && req.tools.length)
-    b.tools = req.tools.map((t) => ({
+  const allTools = [...(req.tools || []), ...(ads ? [liveAdsToolDef] : [])];
+  if (req.json && p.can.json && !allTools.length) b.response_format = { type: "json_object" };
+  if (allTools.length)
+    b.tools = allTools.map((t) => ({
       type: "function",
       function: { name: t.name, description: t.description || "", parameters: t.inputSchema || { type: "object", properties: {} } },
     }));
@@ -199,14 +207,50 @@ export async function* route(req: SampleReq, opts: { label: string; country: str
     try {
       if (p.paid) {
         // Hold the worst-case cost first; skip this AI if it would pass the monthly cap.
-        est = costMicros(p, estimateInputTokens(thisReq), LIMITS.maxOutputTokens[req.tier]);
+        // A research answer may take extra steps (live-ads lookups): hold enough for all of them.
+        const steps = wantsLiveAds(p, thisReq) ? 1 + MAX_LIVE_AD_STEPS : 1;
+        est = costMicros(p, estimateInputTokens(thisReq) + 3000 * (steps - 1), LIMITS.maxOutputTokens[req.tier]) * steps;
         let ok = false;
         try { ok = await store.paidReserve({ requestId: req.requestId, provider: p.id, model: p.models[req.tier], label: opts.label, tier: req.tier, est, cap: capMicros }); } catch (e) { console.warn(`[fluxy] ledger error: ${String((e as Error)?.message || e).slice(0, 200)}`); }
         if (!ok) { capHit = true; continue; }
       }
-      const gen = callOne(p, thisReq, ctl.signal);
-      let r = await gen.next();
-      while (!r.done) { sent = true; yield r.value; r = await gen.next(); }
+      // Run the answer. If the AI asks for live ads, fetch them here on the server and let it continue;
+      // Fluxus only ever sees the finished text (and its own tool calls).
+      let stepReq = thisReq;
+      const total: { in?: number; out?: number; costUsd?: number } = {};
+      const add = (u: { in?: number; out?: number; costUsd?: number }) => {
+        if (u.in != null) total.in = (total.in || 0) + u.in;
+        if (u.out != null) total.out = (total.out || 0) + u.out;
+        if (u.costUsd != null) total.costUsd = (total.costUsd || 0) + u.costUsd;
+      };
+      for (let step = 0; ; step++) {
+        const gen = callOne(p, stepReq, ctl.signal);
+        let calls: { id: string; name: string; args: string }[] = [];
+        let r = await gen.next();
+        while (!r.done) {
+          if (r.value.t === "tool_calls") calls = r.value.calls;
+          else { sent = true; yield r.value; }
+          r = await gen.next();
+        }
+        add(r.value);
+        const internal = calls.filter((c) => c.name === LIVE_ADS_TOOL);
+        const client = calls.filter((c) => c.name !== LIVE_ADS_TOOL);
+        if (!internal.length || step >= MAX_LIVE_AD_STEPS) {
+          if (client.length) { sent = true; yield { t: "tool_calls", calls: client }; }
+          break;
+        }
+        const results = await Promise.all(internal.map((c) => {
+          let a: { query?: string; countries?: string[] } = {};
+          try { a = JSON.parse(c.args || "{}"); } catch {}
+          return searchLiveAds({ query: a.query, countries: a.countries });
+        }));
+        stepReq = { ...stepReq, messages: [
+          ...stepReq.messages,
+          { role: "assistant", content: "", tool_calls: internal.map((c) => ({ id: c.id, type: "function" as const, function: { name: c.name, arguments: c.args || "{}" } })) },
+          ...internal.map((c, i) => ({ role: "tool" as const, tool_call_id: c.id, content: JSON.stringify(results[i]).slice(0, 12000) })),
+        ] };
+      }
+      const r = { value: total };
       if (p.paid) {
         const u = r.value;
         // Use the provider's own reported cost when it gives one (Perplexity does); else tokens x price; else the full hold.

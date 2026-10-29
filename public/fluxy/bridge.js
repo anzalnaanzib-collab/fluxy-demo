@@ -95,7 +95,7 @@
     var all = "", stick, requestId = rid();
 
     for (var n = 0; n <= MAX_TOOL_STEPS; n++) {
-      var payload = { requestId: requestId + (n ? ":" + n : ""), tier: tier, messages: messages, json: !!json && !tools.length };
+      var payload = { requestId: requestId + (n ? ":" + n : ""), tier: tier, messages: messages, json: !!json && !tools.length, page: currentPage() };
       if (tools.length) payload.tools = tools.map(function (t) { return { name: t.name, description: t.description, inputSchema: t.inputSchema }; });
       if (stick) payload.stick = stick;
       var out = await step(payload, signal, function (d) {
@@ -124,6 +124,9 @@
     }
     return all;
   }
+
+  // Which Fluxus screen we're on (Fluxus uses #/route addresses), so research screens get live ads.
+  function currentPage() { try { return (location.hash || "").replace(/^#\/?/, "").split(/[?/]/)[0].slice(0, 40); } catch (_) { return ""; } }
 
   function parseJson(text) {
     var t = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();

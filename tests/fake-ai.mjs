@@ -11,6 +11,12 @@ const sse = (res, chunks) => {
 http.createServer((req, res) => {
   let b = ""; req.on("data", (d) => (b += d)); req.on("end", () => {
     if (req.url === "/__mode") { Object.assign(mode, JSON.parse(b || "{}")); return res.end("ok"); }
+    if (req.url.startsWith("/v23.0/ads_archive")) {      // fake Meta Ad Library
+      const u = new URL(req.url, "http://x");
+      seen.push({ prov: "meta", q: u.searchParams.get("search_terms"), countries: u.searchParams.get("ad_reached_countries"), auth: req.headers.authorization });
+      if (mode.meta === "expired") { res.writeHead(400); return res.end(JSON.stringify({ error: { message: "Session has expired", code: 190 } })); }
+      return res.end(JSON.stringify({ data: [{ id: "1", page_name: "Bean Co", ad_creative_bodies: ["Fresh roast, 20% off"], ad_creative_link_titles: ["Shop now"], ad_delivery_start_time: "2026-10-01", publisher_platforms: ["facebook", "instagram"], ad_snapshot_url: "https://www.facebook.com/ads/archive/render_ad/?id=1" }] }));
+    }
     if (req.url === "/__seen") { res.end(JSON.stringify(seen)); seen.length = 0; return; }
     const prov = req.url.split("/")[1];
     const body = JSON.parse(b || "{}");
@@ -28,11 +34,18 @@ http.createServer((req, res) => {
       ev({ type: "response.completed", response: { usage: { input_tokens: 20, output_tokens: 5, total_tokens: 25, cost: { currency: "USD", input_cost: 0.000005, output_cost: 0.0000125, total_cost: 0.0057 } } } });
       return res.end();
     }
-    seen.push({ prov, auth: req.headers.authorization, model: body.model, tools: (body.tools || []).length, hasTool: body.messages.some((m) => m.role === "tool"), json: !!body.response_format, sys: body.messages[0].content.slice(0, 20), img: JSON.stringify(body.messages).includes("image_url"), re: body.reasoning_effort || null, mtc: "max_completion_tokens" in body, url: req.url });
+    seen.push({ prov, auth: req.headers.authorization, model: body.model, tools: (body.tools || []).length, hasTool: body.messages.some((m) => m.role === "tool"), json: !!body.response_format, sys: body.messages[0].content.slice(0, 20), img: JSON.stringify(body.messages).includes("image_url"), toolNames: (body.tools || []).map((t) => t.function.name), sysHasAds: body.messages[0].content.includes("find_live_ads"), re: body.reasoning_effort || null, mtc: "max_completion_tokens" in body, url: req.url });
     const m = mode[prov];
     if (m === "noreason" && body.reasoning_effort) { res.writeHead(400); return res.end('{"error":{"message":"reasoning_effort is not supported for this model"}}'); }
     if (m === "429") { res.writeHead(429, { "retry-after": "3600" }); return res.end("{}"); }
     if (m === "500") { res.writeHead(500); return res.end("boom"); }
+    const toolNames = (body.tools || []).map((t) => t.function.name);
+    if (m === "liveads" && toolNames.includes("find_live_ads")) {
+      const toolMsg = body.messages.find((x) => x.role === "tool");
+      if (!toolMsg) return sse(res, [{ choices: [{ delta: { tool_calls: [{ index: 0, id: "la1", function: { name: "find_live_ads", arguments: '{"query":"Bean Co","countries":["DE"]}' } }] } }] }, { choices: [], usage: { prompt_tokens: 30, completion_tokens: 5 } }]);
+      const r = JSON.parse(toolMsg.content);
+      return sse(res, [{ choices: [{ delta: { content: r.ok ? `Live ads: ${r.ads[0].page} says "${r.ads[0].text}"` : `No live ads (${r.error})` } }] }, { choices: [], usage: { prompt_tokens: 60, completion_tokens: 9 } }]);
+    }
     if (m === "tools" && !body.messages.some((x) => x.role === "tool"))
       return sse(res, [{ choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "add_posts", arguments: '{"posts":[{"ti' } }] } }] },
                        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'tle":"Hi"}]}' } }] } }] }]);
