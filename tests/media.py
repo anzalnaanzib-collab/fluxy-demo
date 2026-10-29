@@ -1,4 +1,4 @@
-"""Presenter videos (HeyGen) and designed graphics (Moda): started by Fluxy, shown in the tray, downloadable."""
+"""Presenter videos (HeyGen), designed graphics (Moda), product shots and motion clips (Higgsfield): started by Fluxy, shown in the tray, downloadable."""
 import asyncio, json, os, sys, urllib.request
 from playwright.async_api import async_playwright
 SHOTS = os.environ.get("SHOTS", "/tmp")
@@ -16,7 +16,7 @@ async def main():
         fake({"gemini": "makevideo"}); seen()
         t = await pg.evaluate(ASK, "Make a presenter video announcing our summer sale")
         s = seen(); ai = [x for x in s if x["prov"] == "gemini"]; hg = [x for x in s if x["prov"] == "heygen"]
-        check("M01", "Fluxy is offered video + design abilities (no names shown)", ai and {"make_presenter_video", "make_designed_graphic"} <= set(ai[0]["toolNames"]), ai[:1])
+        check("M01", "Fluxy is offered video, design, shot and clip abilities (no names shown)", ai and {"make_presenter_video", "make_designed_graphic", "make_product_shot", "make_motion_clip"} <= set(ai[0]["toolNames"]), ai[:1])
         check("M02", "HeyGen job started with the avatar, script and 9:16, key sent server-side",
               hg and hg[0]["method"] == "POST" and hg[0]["body"]["avatar_id"] == "av_test" and hg[0]["body"]["aspect_ratio"] == "9:16" and hg[0]["key"] == "hg-test-key", hg[:1])
         check("M03", "Fluxy's reply says it's being made", "tray" in t, t)
@@ -39,15 +39,31 @@ async def main():
         check("M09", "Tray survives a page reload", await pg.locator(".fxb-job").count() == 2)
         await pg.get_by_role("button", name="Remove Summer sale post").click()
         check("M10", "Items can be removed", await pg.locator(".fxb-job").count() == 1)
+        fake({"gemini": "makeshot"}); seen()
+        await pg.evaluate(ASK, "Make a product shot of our iced latte")
+        await pg.locator(".fxb-tray img[alt='Iced latte shot']").wait_for(timeout=30000)
+        hf = [x for x in seen() if x["prov"] == "higgsfield"]; post = [x for x in hf if x["method"] == "POST"]
+        check("M14", "Product shot: Higgsfield image job with prompt + 3:4, key sent as 'Key id:secret' server-side",
+              post and post[0]["url"] == "/hf/marketing-studio/image" and post[0]["body"]["aspect_ratio"] == "3:4" and post[0]["auth"] == "Key hf-id:hf-secret" and post[0]["idem"], post[:1])
+        check("M15", "Shot ready in the tray labelled 'Product shot'", "product shot" in (await pg.locator(".fxb-tray").inner_text()).lower())
+        fake({"gemini": "makeclip"}); seen()
+        await pg.evaluate(ASK, "Make a 5 second motion clip of our latte for Reels")
+        await pg.locator(".fxb-tray video").nth(1).wait_for(timeout=60000)
+        hf = [x for x in seen() if x["prov"] == "higgsfield"]; posts = [x for x in hf if x["method"] == "POST"]
+        vid = [x for x in posts if "image-to-video" in x["url"]]
+        check("M16", "Motion clip: still made first (9:16), then animated once from that still with the motion prompt",
+              len(posts) == 2 and posts[0]["body"]["aspect_ratio"] == "9:16" and len(vid) == 1 and vid[0]["body"]["image_url"].endswith("/files/img_2.png") and vid[0]["body"]["prompt"] == "slow push-in, ice settling", posts)
+        check("M17", "Clip shows as a video in the tray labelled 'Motion clip'", "motion clip" in (await pg.locator(".fxb-tray").inner_text()).lower())
+        await pg.screenshot(path=f"{SHOTS}/tray-higgsfield.png")
         js = await pg.evaluate("async () => (await fetch('/fluxy/bridge.js')).text()")
-        check("M11", "No keys and no HeyGen/Moda names in the browser code", not any(w in js for w in ["hg-test-key", "moda-test-key", "HeyGen", "Moda"]))
+        check("M11", "No keys and no provider names in the browser code", not any(w in js for w in ["hg-test-key", "moda-test-key", "hf-secret", "HeyGen", "Moda", "Higgsfield"]))
         anon = await (await b.new_context()).new_page()
         r = await anon.request.get("http://localhost:3100/api/fluxy/media?job=hg_vid1")
         check("M12", "Job status needs a demo code", r.status == 401, r.status)
         fake({"gemini": "ok"}); seen()
         await pg.evaluate("location.hash = '#/calendar'")
         await pg.evaluate(ASK, "hi")
-        s = [x for x in seen() if x["prov"] in ("heygen", "moda")]
+        s = [x for x in seen() if x["prov"] in ("heygen", "moda", "higgsfield")]
         check("M13", "Ordinary questions never start a video or design", not s, s)
         await b.close()
 asyncio.run(main())

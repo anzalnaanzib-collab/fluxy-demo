@@ -7,7 +7,10 @@ const env = (k: string, d = "") => (process.env[k] || d).trim();
 export const heygenOn = () => !!env("HEYGEN_API_KEY") && !!env("HEYGEN_AVATAR_ID");
 export const modaOn = () => !!env("MODA_API_KEY");
 
+export const higgsfieldOn = () => !!hfAuth();
 export const VIDEO_TOOL = "make_presenter_video";
+export const SHOT_TOOL = "make_product_shot";
+export const CLIP_TOOL = "make_motion_clip";
 export const DESIGN_TOOL = "make_designed_graphic";
 
 export const videoToolDef: ToolDef = {
@@ -40,11 +43,44 @@ export const designToolDef: ToolDef = {
   },
 };
 
-export const MEDIA_NOTE =
-  " If the user explicitly asks you to make a presenter/avatar video or a designed graphic, use the matching tool, then tell them it's being made and will appear in the Fluxy tray at the bottom right in a few minutes. Never claim it's finished or invent a link.";
+export const shotToolDef: ToolDef = {
+  name: SHOT_TOOL,
+  description:
+    "Generate a photoreal product or lifestyle photo from a description. ONLY use when the user explicitly asks to make, generate or create a product shot, photo or image (not a designed post with text). Describe product, setting, lighting and style in detail. Takes about a minute; it appears in the Fluxy tray.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      prompt: { type: "string", description: "Detailed photo description: product, setting, lighting, angle, style" },
+      title: { type: "string" },
+      aspect: { type: "string", enum: ["1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2"], description: "3:4 for feed posts, 9:16 for stories (default 1:1)" },
+    },
+    required: ["prompt"],
+  },
+};
 
-export type MediaStart = { ok: true; job: string; kind: "video" | "design"; title: string } | { ok: false; error: string; message: string };
-export type MediaStatus = { status: "working" | "done" | "failed"; url?: string; thumbnail?: string | null; kind?: "video" | "design"; message?: string };
+export const clipToolDef: ToolDef = {
+  name: CLIP_TOOL,
+  description:
+    "Make a short (5 second) photoreal motion clip of a product or scene, without a presenter. ONLY use when the user explicitly asks for a motion clip, short video, b-roll or animated product shot. Fluxy first creates the still, then animates it. Takes a few minutes; it appears in the Fluxy tray.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      scene: { type: "string", description: "What the first frame shows: product, setting, lighting, style" },
+      motion: { type: "string", description: "What moves: camera movement and action, e.g. 'slow push-in, steam rising from the cup'" },
+      title: { type: "string" },
+      aspect: { type: "string", enum: ["9:16", "16:9", "1:1", "3:4"], description: "9:16 for Reels (default)" },
+    },
+    required: ["scene", "motion"],
+  },
+};
+
+export const MEDIA_NOTE =
+  " If the user explicitly asks you to make a presenter/avatar video, a designed graphic, a product shot or a motion clip, use the matching tool, then tell them it's being made and will appear in the Fluxy tray at the bottom right in a few minutes. Never claim it's finished or invent a link.";
+
+export type MediaKind = "video" | "design" | "image" | "clip";
+export type MediaStart = { ok: true; job: string; kind: MediaKind; title: string } | { ok: false; error: string; message: string };
+// next = the job continues under a new id (a motion clip moves from "making the still" to "animating it").
+export type MediaStatus = { status: "working" | "done" | "failed"; url?: string; thumbnail?: string | null; kind?: MediaKind; message?: string; next?: string };
 
 const SIZES: Record<string, [number, number]> = { post: [1080, 1350], story: [1080, 1920], landscape: [1920, 1080], square: [1080, 1080] };
 
@@ -133,11 +169,100 @@ async function designStatus(taskId: string): Promise<MediaStatus> {
   return { status: "working", kind: "design" }; // export still rendering; the tray asks again shortly
 }
 
+// ---------- Higgsfield ----------
+// Key format from Higgsfield: "Key <id>:<secret>". Set HIGGSFIELD_API_KEY_ID + HIGGSFIELD_API_KEY_SECRET,
+// or HIGGSFIELD_API_KEY as "id:secret".
+function hfAuth(): string {
+  const id = env("HIGGSFIELD_API_KEY_ID"), secret = env("HIGGSFIELD_API_KEY_SECRET"), both = env("HIGGSFIELD_API_KEY");
+  if (id && secret) return `Key ${id}:${secret}`;
+  if (both.includes(":")) return `Key ${both}`;
+  return "";
+}
+const HF = () => env("HIGGSFIELD_BASE_URL", "https://api.higgsfield.ai");
+const hfHeaders = (idem?: string) => ({ "content-type": "application/json", authorization: hfAuth(), ...(idem ? { "Idempotency-Key": idem.replace(/[^A-Za-z0-9_:.-]/g, "").slice(0, 200) } : {}) });
+const b64 = (t: string) => Buffer.from(t, "utf8").toString("base64url");
+const unb64 = (t: string) => Buffer.from(t, "base64url").toString("utf8");
+
+async function hfSubmit(path: string, body: unknown, idem: string): Promise<{ ok: true; id: string } | { ok: false; error: string; message: string }> {
+  const r = await fetch(`${HF()}${path}`, { method: "POST", headers: hfHeaders(idem), body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
+  const j = await jsonOrText(r);
+  if (!r.ok || !j?.request_id) { console.warn(`[fluxy] higgsfield ${path}: ${errMsg(j, r)}`); return { ok: false, error: r.status === 429 ? "busy" : "provider_error", message: errMsg(j, r) }; }
+  return { ok: true, id: String(j.request_id) };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function hfStatus(id: string): Promise<{ state: "working" | "done" | "failed"; j?: any; message?: string }> {
+  const r = await fetch(`${HF()}/requests/${encodeURIComponent(id)}/status`, { headers: hfHeaders(), signal: AbortSignal.timeout(20_000) });
+  const j = await jsonOrText(r);
+  if (!r.ok) return r.status === 404 ? { state: "failed", message: "Not found." } : { state: "working" };
+  if (j.status === "completed") return { state: "done", j };
+  if (j.status === "nsfw") return { state: "failed", message: "Blocked by the content rules. Try a different description." };
+  if (j.status === "failed" || j.status === "canceled") return { state: "failed", message: String(j.error || `It ${j.status}.`).slice(0, 200) };
+  return { state: "working" };
+}
+
+const SHOT_PATH = () => env("HIGGSFIELD_IMAGE_PATH", "/marketing-studio/image");
+const CLIP_PATH = () => env("HIGGSFIELD_VIDEO_PATH", "/wan/v2.6/image-to-video");
+const shotBody = (prompt: string, aspect: string) => ({ prompt, aspect_ratio: aspect, resolution: env("HIGGSFIELD_RESOLUTION", "1k"), quality: env("HIGGSFIELD_QUALITY", "medium") });
+
+export async function startShot(a: { prompt?: string; title?: string; aspect?: string }, idem: string): Promise<MediaStart> {
+  if (!higgsfieldOn()) return { ok: false, error: "not_set_up", message: "Product shots aren't connected yet." };
+  const prompt = String(a.prompt || "").trim().slice(0, 4000);
+  if (prompt.length < 5) return { ok: false, error: "bad_request", message: "The description is empty." };
+  const aspect = ["1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2"].includes(String(a.aspect)) ? String(a.aspect) : "1:1";
+  const r = await hfSubmit(SHOT_PATH(), shotBody(prompt, aspect), idem);
+  if (!r.ok) return r;
+  return { ok: true, job: `hfi_${r.id}`, kind: "image", title: String(a.title || prompt.slice(0, 40)).slice(0, 80) };
+}
+
+export async function startClip(a: { scene?: string; motion?: string; title?: string; aspect?: string }, idem: string): Promise<MediaStart> {
+  if (!higgsfieldOn()) return { ok: false, error: "not_set_up", message: "Motion clips aren't connected yet." };
+  const scene = String(a.scene || "").trim().slice(0, 2000), motion = String(a.motion || "").trim().slice(0, 300);
+  if (scene.length < 5 || motion.length < 3) return { ok: false, error: "bad_request", message: "The scene or motion is empty." };
+  const aspect = ["9:16", "16:9", "1:1", "3:4"].includes(String(a.aspect)) ? String(a.aspect) : "9:16";
+  // Step 1: the still frame. The motion description rides along in the job id until step 2.
+  const r = await hfSubmit(SHOT_PATH(), shotBody(scene, aspect), idem);
+  if (!r.ok) return r;
+  return { ok: true, job: `hfc_${r.id}.${b64(motion)}`, kind: "clip", title: String(a.title || motion.slice(0, 40)).slice(0, 80) };
+}
+
+async function shotStatus(id: string): Promise<MediaStatus> {
+  const s = await hfStatus(id);
+  if (s.state !== "done") return { status: s.state, kind: "image", message: s.message };
+  const url = s.j?.images?.[0]?.url;
+  return url ? { status: "done", kind: "image", url, thumbnail: url } : { status: "failed", kind: "image", message: "Finished, but no image came back." };
+}
+
+async function clipStillStatus(token: string): Promise<MediaStatus> {
+  const [id, m] = token.split(".");
+  const s = await hfStatus(id);
+  if (s.state !== "done") return { status: s.state, kind: "clip", message: s.message };
+  const still = s.j?.images?.[0]?.url;
+  if (!still) return { status: "failed", kind: "clip", message: "The still frame didn't come back." };
+  // Step 2: animate the still. Same idempotency key on every poll, so it's only ever submitted once.
+  const v = await hfSubmit(CLIP_PATH(), { prompt: unb64(m || ""), image_url: still, duration: 5, resolution: env("HIGGSFIELD_VIDEO_RESOLUTION", "720p") }, `clip:${id}`);
+  if (!v.ok) return v.error === "busy" ? { status: "working", kind: "clip" } : { status: "failed", kind: "clip", message: v.message };
+  return { status: "working", kind: "clip", next: `hfv_${v.id}`, thumbnail: still };
+}
+
+async function clipStatus(id: string): Promise<MediaStatus> {
+  const s = await hfStatus(id);
+  if (s.state !== "done") return { status: s.state, kind: "clip", message: s.message };
+  const url = s.j?.video?.url;
+  return url ? { status: "done", kind: "clip", url } : { status: "failed", kind: "clip", message: "Finished, but no clip came back." };
+}
+
+export const JOB_RE = /^(hg|md|hfi|hfv)_[A-Za-z0-9_.:-]{1,120}$|^hfc_[A-Za-z0-9_:-]{1,120}\.[A-Za-z0-9_-]{0,420}$/;
+
 export async function jobStatus(job: string): Promise<MediaStatus> {
-  const m = /^(hg|md)_([A-Za-z0-9_.:-]{1,120})$/.exec(job);
-  if (!m) return { status: "failed", message: "Unknown job." };
+  if (!JOB_RE.test(job)) return { status: "failed", message: "Unknown job." };
+  const i = job.indexOf("_"), kind = job.slice(0, i), id = job.slice(i + 1);
   try {
-    return m[1] === "hg" ? await videoStatus(m[2]) : await designStatus(m[2]);
+    if (kind === "hg") return await videoStatus(id);
+    if (kind === "md") return await designStatus(id);
+    if (kind === "hfi") return await shotStatus(id);
+    if (kind === "hfc") return await clipStillStatus(id);
+    return await clipStatus(id);
   } catch {
     return { status: "working" }; // network hiccup: try again next poll
   }

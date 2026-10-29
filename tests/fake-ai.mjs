@@ -25,6 +25,19 @@ http.createServer((req, res) => {
       mode.hgPolls = (mode.hgPolls || 0) + 1;
       return res.end(JSON.stringify({ data: mode.hgPolls < 2 ? { status: "processing" } : { status: "completed", video_url: "http://localhost:4010/files/v.mp4", thumbnail_url: "http://localhost:4010/files/d.png", duration: 12 } }));
     }
+    // ---- fake Higgsfield ----
+    if (req.url.startsWith("/hf/")) {
+      const body = b ? JSON.parse(b) : null;
+      seen.push({ prov: "higgsfield", method: req.method, url: req.url, auth: req.headers.authorization, idem: req.headers["idempotency-key"] || null, body });
+      if (req.method === "POST") {
+        const id = req.url.includes("image-to-video") ? "vid_hf" : `img_${(mode.hfImgs = (mode.hfImgs || 0) + 1)}`;
+        return res.end(JSON.stringify({ status: "queued", request_id: id, status_url: `http://localhost:4010/hf/requests/${id}/status` }));
+      }
+      const id = req.url.split("/")[3]; mode.hfPolls = mode.hfPolls || {}; mode.hfPolls[id] = (mode.hfPolls[id] || 0) + 1;
+      if (id.startsWith("0000")) { res.writeHead(404); return res.end("{}"); }
+      if (mode.hfPolls[id] < 2) return res.end(JSON.stringify({ status: "in_progress", request_id: id }));
+      return res.end(JSON.stringify(id === "vid_hf" ? { status: "completed", request_id: id, video: { url: "http://localhost:4010/files/c.mp4" } } : { status: "completed", request_id: id, images: [{ url: `http://localhost:4010/files/${id}.png` }] }));
+    }
     // ---- fake Moda ----
     if (req.url.startsWith("/moda/")) {
       const body = b ? JSON.parse(b) : null;
@@ -63,7 +76,7 @@ http.createServer((req, res) => {
     if (m === "429") { res.writeHead(429, { "retry-after": "3600" }); return res.end("{}"); }
     if (m === "500") { res.writeHead(500); return res.end("boom"); }
     const toolNames = (body.tools || []).map((t) => t.function.name);
-    for (const [md, tn, args] of [["makevideo", "make_presenter_video", '{"script":"Hi! Our summer sale starts today.","title":"Summer sale promo","aspect":"9:16"}'], ["makedesign", "make_designed_graphic", '{"prompt":"Instagram post for Bean Co summer sale, 20% off","title":"Summer sale post","size":"post"}']]) {
+    for (const [md, tn, args] of [["makevideo", "make_presenter_video", '{"script":"Hi! Our summer sale starts today.","title":"Summer sale promo","aspect":"9:16"}'], ["makedesign", "make_designed_graphic", '{"prompt":"Instagram post for Bean Co summer sale, 20% off","title":"Summer sale post","size":"post"}'], ["makeshot", "make_product_shot", '{"prompt":"Bean Co iced latte on a marble counter, morning light","title":"Iced latte shot","aspect":"3:4"}'], ["makeclip", "make_motion_clip", '{"scene":"Bean Co iced latte on a marble counter","motion":"slow push-in, ice settling","title":"Latte clip"}']]) {
       if (m === md && toolNames.includes(tn)) {
         const tm = body.messages.find((x) => x.role === "tool");
         if (!tm) return sse(res, [{ choices: [{ delta: { tool_calls: [{ index: 0, id: "mk1", function: { name: tn, arguments: args } }] } }] }, { choices: [], usage: { prompt_tokens: 30, completion_tokens: 5 } }]);

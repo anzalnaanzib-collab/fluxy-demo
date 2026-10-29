@@ -255,11 +255,13 @@
 
   /* ---------- Fluxy tray: presenter videos and designed graphics being made ---------- */
   var trayEl = null, jobs = [];
+  var KIND_LABEL = { video: "Presenter video", design: "Design", image: "Product shot", clip: "Motion clip" };
+  var isMotion = function (k) { return k === "video" || k === "clip"; };
   function saveJobs() { try { sessionStorage.setItem("fxb-jobs", JSON.stringify(jobs.slice(-8))); } catch (_) {} }
   function loadJobs() { try { jobs = JSON.parse(sessionStorage.getItem("fxb-jobs") || "[]") || []; } catch (_) { jobs = []; } }
   function trayAdd(ev) {
     if (jobs.some(function (j) { return j.job === ev.job; })) return;
-    jobs.push({ job: ev.job, kind: ev.kind, title: ev.title || (ev.kind === "video" ? "Presenter video" : "Design"), status: "working", at: Date.now() });
+    jobs.push({ job: ev.job, kind: ev.kind, title: ev.title || KIND_LABEL[ev.kind] || "Media", status: "working", at: Date.now() });
     saveJobs(); renderTray(); poll(ev.job);
   }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -278,7 +280,7 @@
     jobs.slice().reverse().forEach(function (j) {
       var card = el("article", "fxb-job " + j.status);
       var top = el("div", "fxb-job-top");
-      top.appendChild(el("span", "fxb-job-kind", j.kind === "video" ? "Presenter video" : "Design"));
+      top.appendChild(el("span", "fxb-job-kind", KIND_LABEL[j.kind] || "Media"));
       var x = el("button", "fxb-x"); x.type = "button"; x.setAttribute("aria-label", "Remove " + j.title); x.innerHTML = ICON_X;
       x.addEventListener("click", function () { jobs = jobs.filter(function (k) { return k.job !== j.job; }); saveJobs(); renderTray(); });
       top.appendChild(x); card.appendChild(top);
@@ -286,9 +288,11 @@
       if (j.status === "working") {
         var bar = el("div", "fxb-job-bar"); bar.setAttribute("role", "progressbar"); bar.setAttribute("aria-label", "Making " + j.title);
         bar.appendChild(el("span")); card.appendChild(bar);
-        card.appendChild(el("p", "fxb-job-note", j.kind === "video" ? "Usually ready in a few minutes. You can keep working." : "Usually ready in a minute or two. You can keep working."));
+        if (j.thumbnail && j.kind === "clip") { var st = el("img", "fxb-job-media"); st.src = j.thumbnail; st.alt = "First frame of " + j.title; card.appendChild(st); }
+        card.appendChild(el("p", "fxb-job-note", j.kind === "clip" ? (j.thumbnail ? "Animating the still now. You can keep working." : "Making the first frame, then animating it. You can keep working.")
+          : isMotion(j.kind) ? "Usually ready in a few minutes. You can keep working." : "Usually ready in a minute or two. You can keep working."));
       } else if (j.status === "done") {
-        if (j.kind === "video") {
+        if (isMotion(j.kind)) {
           var v = el("video", "fxb-job-media"); v.controls = true; v.preload = "metadata"; v.src = j.url; if (j.thumbnail) v.poster = j.thumbnail;
           v.setAttribute("aria-label", j.title); card.appendChild(v);
         } else {
@@ -312,10 +316,11 @@
         var r = await fetch(API + "/media?job=" + encodeURIComponent(job), { credentials: "same-origin", cache: "no-store" });
         if (r.status === 401) { showGate(); return setTimeout(tick, 15000); }
         var s = await r.json();
-        if (s.status === "done") { j.status = "done"; j.url = s.url; j.thumbnail = s.thumbnail; saveJobs(); renderTray(); toast((j.kind === "video" ? "Your presenter video" : "Your design") + " is ready.", "info"); return; }
+        if (s.next) { j.job = s.next; job = s.next; if (s.thumbnail) j.thumbnail = s.thumbnail; saveJobs(); renderTray(); }
+        if (s.status === "done") { j.status = "done"; j.url = s.url; if (s.thumbnail) j.thumbnail = s.thumbnail; saveJobs(); renderTray(); toast("Your " + (KIND_LABEL[j.kind] || "file").toLowerCase() + " is ready.", "info"); return; }
         if (s.status === "failed") { j.status = "failed"; j.message = s.message; saveJobs(); renderTray(); return; }
       } catch (_) {}
-      setTimeout(tick, j.kind === "video" ? 10000 : 6000);
+      setTimeout(tick, isMotion(j.kind) ? 10000 : 6000);
     };
     setTimeout(tick, 4000);
   }

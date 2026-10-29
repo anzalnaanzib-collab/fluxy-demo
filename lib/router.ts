@@ -3,7 +3,7 @@
 import { PROVIDERS, Provider, ProviderId, Tier, hasKey, GEMINI_FREE_BLOCKED, LIMITS, FLUXY_SYSTEM, PAID_CAP_USD, micros, costMicros } from "./config";
 import { getStore, Store } from "./store";
 import { LIVE_ADS_TOOL, LIVE_ADS_NOTE, liveAdsOn, liveAdsToolDef, isResearchPage, searchLiveAds } from "./liveads";
-import { VIDEO_TOOL, DESIGN_TOOL, MEDIA_NOTE, videoToolDef, designToolDef, heygenOn, modaOn, startVideo, startDesign } from "./media";
+import { VIDEO_TOOL, DESIGN_TOOL, SHOT_TOOL, CLIP_TOOL, MEDIA_NOTE, videoToolDef, designToolDef, shotToolDef, clipToolDef, heygenOn, modaOn, higgsfieldOn, startVideo, startDesign, startShot, startClip, MediaKind } from "./media";
 
 export type Msg =
   | { role: "system" | "user" | "assistant"; content: string | Part[]; tool_calls?: ToolCall[] }
@@ -25,18 +25,18 @@ function internalTools(p: Provider, req: SampleReq): { defs: ToolDef[]; note: st
   const defs: ToolDef[] = [];
   let note = "";
   if (wantsLiveAds(p, req)) { defs.push(liveAdsToolDef); note += LIVE_ADS_NOTE; }
-  const media = [heygenOn() && videoToolDef, modaOn() && designToolDef].filter(Boolean) as ToolDef[];
+  const media = [heygenOn() && videoToolDef, modaOn() && designToolDef, higgsfieldOn() && shotToolDef, higgsfieldOn() && clipToolDef].filter(Boolean) as ToolDef[];
   if (media.length) { defs.push(...media); note += MEDIA_NOTE; }
   return { defs, note };
 }
-const INTERNAL = new Set([LIVE_ADS_TOOL, VIDEO_TOOL, DESIGN_TOOL]);
+const INTERNAL = new Set([LIVE_ADS_TOOL, VIDEO_TOOL, DESIGN_TOOL, SHOT_TOOL, CLIP_TOOL]);
 const MAX_LIVE_AD_STEPS = 2;
 
 export type Ev =
   | { t: "text"; v: string }
   | { t: "tool_calls"; calls: { id: string; name: string; args: string }[] }
   | { t: "done"; route: ProviderId; usage?: { in?: number; out?: number } }
-  | { t: "media"; job: string; kind: "video" | "design"; title: string }
+  | { t: "media"; job: string; kind: MediaKind; title: string }
   | { t: "error"; code: "rate_limited" | "bad_request" | "unavailable" };
 
 const hasImages = (m: Msg[]) => m.some((x) => Array.isArray(x.content) && x.content.some((p) => p.type === "image_url"));
@@ -258,7 +258,11 @@ export async function* route(req: SampleReq, opts: { label: string; country: str
           try { a = JSON.parse(c.args || "{}"); } catch {}
           if (c.name === LIVE_ADS_TOOL) { results.push(await searchLiveAds({ query: a.query as string, countries: a.countries as string[] })); continue; }
           const idem = `${req.requestId}:${c.id}`;
-          const started = c.name === VIDEO_TOOL ? await startVideo(a as { script?: string }, idem) : await startDesign(a as { prompt?: string }, idem);
+          const started =
+            c.name === VIDEO_TOOL ? await startVideo(a as { script?: string }, idem)
+            : c.name === DESIGN_TOOL ? await startDesign(a as { prompt?: string }, idem)
+            : c.name === SHOT_TOOL ? await startShot(a as { prompt?: string }, idem)
+            : await startClip(a as { scene?: string; motion?: string }, idem);
           if (started.ok) {
             sent = true; // a job has started: never silently retry this answer on another AI
             yield { t: "media", job: started.job, kind: started.kind, title: started.title };

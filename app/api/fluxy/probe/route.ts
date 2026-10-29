@@ -76,5 +76,17 @@ export async function POST(req: Request) {
       results.push({ id: "designed_graphics", model: "Moda", ok: r.ok, status: r.status, ms: 0, detail: r.ok ? `key works; credits: ${t.slice(0, 200)}` : t.slice(0, 300) });
     } catch (e) { results.push({ id: "designed_graphics", model: "Moda", ok: false, status: 0, ms: 0, detail: String((e as Error).message) }); }
   }
+  // Product shots and motion clips (Higgsfield): checks the key without making anything.
+  const { higgsfieldOn } = await import("@/lib/media");
+  if (higgsfieldOn()) {
+    try {
+      const id = process.env.HIGGSFIELD_API_KEY_ID || (process.env.HIGGSFIELD_API_KEY || "").split(":")[0];
+      const secret = process.env.HIGGSFIELD_API_KEY_SECRET || (process.env.HIGGSFIELD_API_KEY || "").split(":").slice(1).join(":");
+      const r = await fetch(`${process.env.HIGGSFIELD_BASE_URL || "https://api.higgsfield.ai"}/requests/00000000-0000-0000-0000-000000000000/status`, { headers: { authorization: `Key ${id}:${secret}` }, signal: AbortSignal.timeout(20_000) });
+      const t = await r.text();
+      const ok = r.status === 404 || r.ok;   // 404 = key accepted, test request simply doesn't exist
+      results.push({ id: "product_shots_and_clips", model: "Higgsfield", ok, status: r.status, ms: 0, detail: ok ? "key works" : t.slice(0, 300) });
+    } catch (e) { results.push({ id: "product_shots_and_clips", model: "Higgsfield", ok: false, status: 0, ms: 0, detail: String((e as Error).message) }); }
+  }
   return Response.json({ results }, { headers: { "cache-control": "no-store" } });
 }
