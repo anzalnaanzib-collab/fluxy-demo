@@ -53,7 +53,25 @@ export function cooldownUntil(p: ProviderId, res: Response | null, now = Date.no
   return now + 60 * 60 * 1000;
 }
 
+// Perplexity Agent API: plain text messages in, live web search on.
+function pplxBody(p: Provider, req: SampleReq) {
+  const text = (c: Msg["content"]) => (typeof c === "string" ? c : c.map((x) => (x.type === "text" ? x.text : "")).join("\n"));
+  const input = req.messages
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => ({ type: "message", role: m.role, content: text(m.content) }))
+    .filter((m) => m.content);
+  return {
+    model: p.models[req.tier],
+    instructions: FLUXY_SYSTEM + (req.json ? " Reply with valid JSON only, no code fences." : ""),
+    input,
+    tools: [{ type: "web_search" }],
+    max_output_tokens: LIMITS.maxOutputTokens[req.tier],
+    stream: true,
+  };
+}
+
 export function body(p: Provider, req: SampleReq) {
+  if (p.api === "pplx-agent") return pplxBody(p, req);
   const sys: Msg = { role: "system", content: FLUXY_SYSTEM + (req.json ? " Reply with valid JSON only, no code fences." : "") };
   const b: Record<string, unknown> = {
     model: p.models[req.tier],
@@ -79,7 +97,7 @@ export function estimateInputTokens(req: SampleReq): number {
 
 class Fail extends Error { constructor(public kind: "quota" | "down" | "bad", public res: Response | null, msg: string) { super(msg); } }
 
-async function* callOne(p: Provider, req: SampleReq, signal: AbortSignal): AsyncGenerator<Ev, { in?: number; out?: number }> {
+export async function* callOne(p: Provider, req: SampleReq, signal: AbortSignal): AsyncGenerator<Ev, { in?: number; out?: number; costUsd?: number }> {
   let res: Response;
   try {
     res = await fetch(`${p.baseUrl}${p.path || "/chat/completions"}`, {
@@ -91,7 +109,7 @@ async function* callOne(p: Provider, req: SampleReq, signal: AbortSignal): Async
   } catch (e) {
     throw new Fail("down", null, `network: ${(e as Error).message}`);
   }
-  if (res.status === 429) throw new Fail("quota", res, "rate limited");
+  if (res.status === 429) throw new Fail("quota", res, "limit reached (429): " + (await res.text().catch(() => "")).slice(0, 300));
   if (!res.ok || !res.body) {
     const why = (await res.text().catch(() => "")).slice(0, 300);
     if (res.status === 400 || res.status === 413 || res.status === 422) throw new Fail("bad", res, `rejected ${res.status}: ${why}`);
@@ -99,7 +117,7 @@ async function* callOne(p: Provider, req: SampleReq, signal: AbortSignal): Async
   }
 
   const calls = new Map<number, { id: string; name: string; args: string }>();
-  let usage: { in?: number; out?: number } = {};
+  let usage: { in?: number; out?: number; costUsd?: number } = {};
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = "";
@@ -116,6 +134,17 @@ async function* callOne(p: Provider, req: SampleReq, signal: AbortSignal): Async
       if (data === "[DONE]") continue;
       let j: any;
       try { j = JSON.parse(data); } catch { continue; }
+      if (p.api === "pplx-agent") {
+        if (j.type === "response.output_text.delta" && typeof j.delta === "string" && j.delta) yield { t: "text", v: j.delta };
+        else if (j.type === "response.completed") {
+          const u = j.response?.usage;
+          if (u) usage = { in: u.input_tokens, out: u.output_tokens, costUsd: typeof u.cost?.total_cost === "number" ? u.cost.total_cost : undefined };
+        } else if (j.type === "response.failed" || j.type === "error") {
+          const msg = String(j.error?.message || j.response?.error?.message || "agent error");
+          throw new Fail(/rate|quota|429/i.test(msg) ? "quota" : "down", null, msg);
+        }
+        continue;
+      }
       if (j.error) throw new Fail(j.error.code === 429 ? "quota" : "down", null, String(j.error.message || "stream error"));
       if (j.usage) usage = { in: j.usage.prompt_tokens, out: j.usage.completion_tokens };
       const d = j.choices?.[0]?.delta;
@@ -171,7 +200,8 @@ export async function* route(req: SampleReq, opts: { label: string; country: str
       while (!r.done) { sent = true; yield r.value; r = await gen.next(); }
       if (p.paid) {
         const u = r.value;
-        const real = u.in != null && u.out != null ? costMicros(p, u.in, u.out) : est;   // no usage reported -> count the full hold
+        // Use the provider's own reported cost when it gives one (Perplexity does); else tokens x price; else the full hold.
+        const real = typeof u.costUsd === "number" ? micros(u.costUsd) : u.in != null && u.out != null ? costMicros(p, u.in, u.out) : est;
         await store.paidSettle(req.requestId, p.id, real, u.in ?? 0, u.out ?? 0).catch((e) => console.warn(`[fluxy] settle error: ${String(e?.message || e).slice(0, 200)}`));
       }
       await store.record({ requestId: req.requestId, label: opts.label, provider: p.id, model: p.models[req.tier], tier: req.tier, status: "ok", inputTokens: r.value.in, outputTokens: r.value.out }).catch(() => {});

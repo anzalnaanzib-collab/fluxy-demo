@@ -18,6 +18,7 @@ export type Provider = {
   maxImages: number;
   extraHeaders?: Record<string, string>;
   path?: string;            // defaults to /chat/completions
+  api?: "chat" | "pplx-agent";  // pplx-agent = Perplexity's Agent API (since Sep 2026)
   paid?: {
     label: string;                          // shown on the owner page only
     inPerM: number; outPerM: number;        // USD per 1M tokens (the higher, long-prompt rate is not used here)
@@ -92,9 +93,11 @@ export const PROVIDERS: Provider[] = [
   {
     id: "perplexity",
     baseUrl: env("PERPLEXITY_BASE_URL", "https://api.perplexity.ai"),
-    path: env("PERPLEXITY_PATH", "/chat/completions"),
+    path: env("PERPLEXITY_PATH", "/v1/agent"),
+    api: "pplx-agent",
     keyEnv: "PERPLEXITY_API_KEY",
-    models: { quick: env("PERPLEXITY_MODEL", "sonar"), default: env("PERPLEXITY_MODEL", "sonar") },
+    // Agent API with live web search. It reports its own exact cost, which Fluxy uses for the ledger.
+    models: { quick: env("PERPLEXITY_MODEL", "perplexity/sonar"), default: env("PERPLEXITY_MODEL", "perplexity/sonar") },
     can: { tools: false, images: false, json: false },
     maxImages: 0,
     // Sonar $0.25 / $2.50 per 1M, plus a web-search fee counted at a safe $0.005 per call.

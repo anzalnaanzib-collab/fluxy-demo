@@ -14,6 +14,20 @@ http.createServer((req, res) => {
     if (req.url === "/__seen") { res.end(JSON.stringify(seen)); seen.length = 0; return; }
     const prov = req.url.split("/")[1];
     const body = JSON.parse(b || "{}");
+    if (req.url.endsWith("/v1/agent")) {             // Perplexity Agent API format
+      seen.push({ prov, agent: true, model: body.model, search: JSON.stringify(body.tools || []).includes("web_search"), instr: (body.instructions || "").slice(0, 20), input: body.input });
+      const m = mode[prov];
+      if (m === "429") { res.writeHead(429); return res.end('{"error":{"message":"rate limit"}}'); }
+      if (m === "fail") { res.writeHead(200, { "content-type": "text/event-stream" }); res.write(`data: ${JSON.stringify({ type: "response.failed", error: { message: "boom" } })}\n\n`); return res.end(); }
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      const ev = (o) => res.write(`event: ${o.type}\ndata: ${JSON.stringify(o)}\n\n`);
+      ev({ type: "response.created", response: {} });
+      ev({ type: "response.reasoning.search_queries", queries: ["x"] });
+      ev({ type: "response.output_text.delta", delta: "Hello from " });
+      ev({ type: "response.output_text.delta", delta: "perplexity." });
+      ev({ type: "response.completed", response: { usage: { input_tokens: 20, output_tokens: 5, total_tokens: 25, cost: { currency: "USD", input_cost: 0.000005, output_cost: 0.0000125, total_cost: 0.0057 } } } });
+      return res.end();
+    }
     seen.push({ prov, auth: req.headers.authorization, model: body.model, tools: (body.tools || []).length, hasTool: body.messages.some((m) => m.role === "tool"), json: !!body.response_format, sys: body.messages[0].content.slice(0, 20), img: JSON.stringify(body.messages).includes("image_url"), mtc: "max_completion_tokens" in body, url: req.url });
     const m = mode[prov];
     if (m === "429") { res.writeHead(429, { "retry-after": "3600" }); return res.end("{}"); }

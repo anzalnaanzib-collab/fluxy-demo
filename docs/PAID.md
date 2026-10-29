@@ -17,12 +17,11 @@ and the cap in Vercel, then Redeploy. Also set a spending limit in each company'
 | --- | --- | --- | --- | --- |
 | Grok | grok-4.3 | 1.25 | 2.50 | costbench.com xAI API page, verified 2026-10-10 |
 | Claude | claude-haiku-5-5 | 0.10 | 0.50 | platform.claude.com pricing (prompts up to 100K tokens) |
-| Perplexity | sonar | 0.25 | 2.50 + $0.005/call (safe estimate for search) | docs.perplexity.ai |
+| Perplexity | perplexity/sonar (Agent API, web search) | 0.25 | 2.50; the cap holds a $0.005 search estimate, then counts Perplexity's own reported cost | docs.perplexity.ai |
 | Gemini (paid) | gemini-flash-lite-latest | 0.50 | 3.00 | deliberately high estimate; set exact prices |
 | ChatGPT | gpt-5.4-mini | 0.75 | 4.50 | costbench.com OpenAI API page (confirm the model name with "Test each AI") |
 
-Note: Perplexity retired its old chat endpoint on 27 Sep 2026; requests are being moved to its
-new Agent API. "Test each AI" shows whether it works for your key; if not, leave it out.
+Perplexity now runs on its Agent API (/v1/agent) with web search; its own reported cost is what gets counted.
 
 ## Tests
 `tests/run_paid.sh`: free first, paid only after free is out, real-token costing, cut-off answers

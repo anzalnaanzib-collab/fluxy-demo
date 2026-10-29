@@ -34,7 +34,15 @@ async def main(sc):
             fake({"xai": "429"}); seen()
             t = await own.evaluate(ASK, "hi")
             check("P05", "paid AI out -> next paid AI (Claude) answers", t.startswith("Hello from anthropic"), t)
-            fake({"anthropic": "500", "perplexity": "500", "gemini_paid": "500"}); seen()
+            fake({"anthropic": "500"}); seen()
+            t = await own.evaluate(ASK, "hi"); s = seen()
+            pp = [x for x in s if x.get("agent")]
+            check("P05b", "Perplexity answers via its new Agent API, web search on, Fluxy instructions sent",
+                  t == "Hello from perplexity." and pp and pp[0]["model"] == "perplexity/sonar" and pp[0]["search"] and pp[0]["instr"].startswith("You are Fluxy")
+                  and pp[0]["input"] == [{"type": "message", "role": "user", "content": "hi"}], (t, pp))
+            h = await health(own); byp = {x["provider"]: x["spentUsd"] for x in h["paid"]["byProvider"]}
+            check("P05c", "Perplexity's own reported cost ($0.0057) is what gets counted", abs(byp.get("perplexity", 0) - 0.0057) < 1e-6, byp)
+            fake({"perplexity": "fail", "gemini_paid": "500"}); seen()
             t = await own.evaluate(ASK, "hi"); s = seen()
             o = [x for x in s if x["prov"] == "openai"]
             check("P06", "ChatGPT reached last, using max_completion_tokens", t.startswith("Hello from openai") and o and o[0]["mtc"], (t, s[-1:]))
