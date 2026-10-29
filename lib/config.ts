@@ -26,6 +26,7 @@ export type Provider = {
     priceDate: string;                      // when the price was read
   };
   maxTokensField?: "max_tokens" | "max_completion_tokens";
+  reasoningEffort?: string; // e.g. "low": keeps "thinking" models fast; dropped automatically if rejected
 };
 const num = (k: string, d: number) => { const v = Number(process.env[k]); return Number.isFinite(v) && v >= 0 && process.env[k] !== "" && process.env[k] !== undefined ? v : d; };
 
@@ -42,6 +43,7 @@ export const PROVIDERS: Provider[] = [
     },
     can: { tools: true, images: true, json: true },
     maxImages: 4,
+    reasoningEffort: env("GEMINI_REASONING", "low"),
   },
   {
     id: "groq",
@@ -111,6 +113,7 @@ export const PROVIDERS: Provider[] = [
     can: { tools: true, images: true, json: true },
     maxImages: 4,
     // Counted at a deliberately high estimate so the cap is never exceeded; set exact prices if you like.
+    reasoningEffort: env("GEMINI_REASONING", "low"),
     paid: { label: "Gemini (paid)", inPerM: num("GEMINI_PAID_PRICE_IN", 0.5), outPerM: num("GEMINI_PAID_PRICE_OUT", 3), priceDate: "2026-10-29 (safe estimate)" },
   },
   {

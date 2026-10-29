@@ -70,6 +70,9 @@ function pplxBody(p: Provider, req: SampleReq) {
   };
 }
 
+// Providers that rejected reasoning_effort once: don't send it again (until the server restarts).
+const noReasoning = new Set<ProviderId>();
+
 export function body(p: Provider, req: SampleReq) {
   if (p.api === "pplx-agent") return pplxBody(p, req);
   const sys: Msg = { role: "system", content: FLUXY_SYSTEM + (req.json ? " Reply with valid JSON only, no code fences." : "") };
@@ -80,6 +83,7 @@ export function body(p: Provider, req: SampleReq) {
   };
   b[p.maxTokensField || "max_tokens"] = LIMITS.maxOutputTokens[req.tier];
   if (p.id !== "openrouter" && p.id !== "perplexity") b.stream_options = { include_usage: true };
+  if (p.reasoningEffort && p.reasoningEffort !== "off" && !noReasoning.has(p.id)) b.reasoning_effort = p.reasoningEffort;
   if (req.json && p.can.json && !(req.tools && req.tools.length)) b.response_format = { type: "json_object" };
   if (req.tools && req.tools.length)
     b.tools = req.tools.map((t) => ({
@@ -112,6 +116,11 @@ export async function* callOne(p: Provider, req: SampleReq, signal: AbortSignal)
   if (res.status === 429) throw new Fail("quota", res, "limit reached (429): " + (await res.text().catch(() => "")).slice(0, 300));
   if (!res.ok || !res.body) {
     const why = (await res.text().catch(() => "")).slice(0, 300);
+    if ((res.status === 400 || res.status === 422) && /reasoning|thinking/i.test(why) && !noReasoning.has(p.id) && p.reasoningEffort) {
+      // This model doesn't accept the "think less" setting: remember that and retry once without it.
+      noReasoning.add(p.id);
+      return yield* callOne(p, req, signal);
+    }
     if (res.status === 400 || res.status === 413 || res.status === 422) throw new Fail("bad", res, `rejected ${res.status}: ${why}`);
     throw new Fail("down", res, `status ${res.status}: ${why}`);
   }
