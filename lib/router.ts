@@ -50,7 +50,7 @@ export function cooldownUntil(p: ProviderId, res: Response | null, now = Date.no
   return now + 60 * 60 * 1000;
 }
 
-function body(p: Provider, req: SampleReq) {
+export function body(p: Provider, req: SampleReq) {
   const sys: Msg = { role: "system", content: FLUXY_SYSTEM + (req.json ? " Reply with valid JSON only, no code fences." : "") };
   const b: Record<string, unknown> = {
     model: p.models[req.tier],
